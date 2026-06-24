@@ -1,28 +1,20 @@
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from tensorflow import keras
 
-# # File path and name file
-# data_path = Path('data')
-# file_name = 'DNN_data_IOP_Aguichine2021.dat'
-
-# # Reading the data
-# df = pd.read_table(data_path / file_name, sep=r"\s+")
-# print(f"Number of lines of the data : {len(df)}")
-
 def preprocessing(df, features, label):
-    """
-    Input:
-        df: pandas dataframe
-        features: list of features
-        label: label
+    """ Data preprocesing
+    Produce normalizer, test and train dataframes ready for input to keras
 
-    output:
-        Normalizer: mean and variance of each feature column
+    Args:
+        df (dataframe): pandas dataframe. Input data
+        features (list): list of strings. List of features
+        label (scalar): string. Label used as target
 
+    Returns:
+        tuple: normalizer, test and train dataframes 
     """
+    
     df = df[df["errcode"] == 0]
     print(f"Number of lines after quality cuts: {len(df)}")
 
