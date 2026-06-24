@@ -10,7 +10,6 @@ dependencies = [
     "tensorflow_docs",
     "numpy"
 ]
-requires-python = "3.10"
 authors = [
   {name = "Ashley Parr", email = "amparr83@gmail.com"},
   {name = "Bishwash Devkota", email = "bishwashdevkota567@gmail.com"},
