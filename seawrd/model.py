@@ -1,22 +1,49 @@
-import keras
-import tensorflow as tf
-import numpy as np
-from pathlib import Path
-import re
+from __future__ import annotations
+
 import pickle
+import re
+from pathlib import Path
+
+import keras
+import numpy as np
 
 
-class DNN:
+class DNNManager:
     """
     A class to manage the creation, saving, and loading of a Deep Neural Network (DNN) model using Keras.
     """
 
     def __init__(self,
-                 num_layers : int,
-                 num_neurons : int,
-                 num_epochs : int):
+                 model : keras.Sequential,
+                 history : dict | None,
+                 version : int):
         """
-        Initialises the DNN class with the specified number of layers, neurons, and epochs.
+        Initialises the DNN class. Depending on the parameters, it either loads an existing model or generates a new one
+        and saves it. The model is then compiled and ready for training or evaluation.
+
+        Parameters
+        ----------
+        model : keras.Sequential
+            The Keras Sequential model to be managed.
+        history : dict | None
+            The training history of the model, if available. If None, it indicates that the model has not been trained yet.
+        version : int
+            The version number of the model. This is used for saving and loading different versions of the model.
+        """
+        self.model = model
+        self.history = history
+        self.version = version
+
+    @classmethod
+    def generate_model(cls,
+                       num_layers : int,
+                       num_neurons : int,
+                       input_shape : tuple[int, ...],
+                       normaliser : keras.layers.Normalization,
+                       num_outputs : int) -> DNNManager:
+        """
+        Generates a Keras Sequential model, using an input layer, normalisation, num_layers hidden dense layers of
+        num_neurons each, and an output layer specified by labels_cols.
 
         Parameters
         ----------
@@ -24,55 +51,58 @@ class DNN:
             The number of hidden layers in the neural network.
         num_neurons : int
             The number of neurons in each hidden layer.
-        num_epochs : int
-            The number of epochs to train the model.
-        """
-        self.num_layers = num_layers
-        self.num_neurons = num_neurons
-        self.num_epochs = num_epochs
-
-    # ---------- MODEL ARCHITECTURE ----------
-    def generate_model(self,
-                       train_features : np.ndarray,
-                       normalizer : keras.layers.Normalization,
-                       labels_cols : list) -> keras.Sequential:
-        """
-        Generates a Keras Sequential model, using an input layer, normalisation, num_layers hidden dense layers of
-        num_neurons each, and an output layer specified by labels_cols.
-
-        Parameters
-        ----------
-        train_features : np.ndarray
-            The training features.
-        normalizer : keras.layers.Normalization
+        input_shape : tuple[int, ...]
+            The shape of the input features.
+        normaliser : keras.layers.Normalization
             The normalisation layer to be applied to the input features.
-        labels_cols : list
-            The list of column names for the labels.
+        num_outputs : int
+            The number of outputs for the output layer.
 
         Returns
         -------
-        keras.Sequential
-            The constructed Keras Sequential model.
+        DNNManager
+            The DNNManager instance with the generated model, an empty history, and version.
         """
         # Creates a new model
-        dnn_model = keras.Sequential()
+        model = keras.Sequential()
 
         # Add an input layer for features
-        dnn_model.add(keras.Input(shape=(train_features.shape[1],)))
-        dnn_model.add(normalizer)
+        model.add(keras.Input(shape=input_shape))
+        model.add(normaliser)
 
         # Add hidden layers
-        for _ in range(self.num_layers):
-            dnn_model.add(keras.layers.Dense(self.num_neurons, activation='relu'))
+        for _ in range(num_layers):
+            model.add(keras.layers.Dense(num_neurons, activation='relu'))
 
         # Add output layer
-        dnn_model.add(keras.layers.Dense(len(labels_cols)))
+        model.add(keras.layers.Dense(num_outputs))
 
-        return dnn_model
+        return cls(model=model, history=None, version=0)
+
+    @classmethod
+    def load_model(cls,
+                   model_path : Path | str) -> DNNManager:
+        """
+        Loads a Keras model from the specified path.
+
+        Parameters
+        ----------
+        model_path : Path | str
+            The path to the saved Keras model.
+
+        Returns
+        -------
+        DNNManager
+            The DNNManager instance with the loaded model, history, and version.
+        """
+        if isinstance(model_path, str):
+            model_path = Path(model_path)
+
+        return cls(model=keras.models.load_model(model_path), history=None, version=0)
 
 
     # ---------- MODEL SAVING AND LOADING ----------
-    def latest_version(self,
+    def get_latest_version(self,
                        model_dir : Path | str,
                        model_name : str,
                        pattern : re.Pattern | str | None = None) -> int:
@@ -95,7 +125,7 @@ class DNN:
         """
         if pattern is None:
             pattern = re.compile(rf"^{re.escape(model_name)}_v(\d+)_model\.keras$")
-            
+
         if isinstance(pattern, str):
             pattern = re.compile(pattern)
 
@@ -190,7 +220,6 @@ class DNN:
 
         return paths
 
-
     def load_model_version(self,
                            model_dir : Path | str,
                            model_name : str,
@@ -222,7 +251,7 @@ class DNN:
 
         # If no version is specified, find the latest version
         if version is None:
-            version = self.latest_version(model_dir, model_name)
+            version = self.get_latest_version(model_dir, model_name)
 
         # If the specified version does not exist, raise an error
         if version == 0:
@@ -242,17 +271,26 @@ class DNN:
 
 
 if __name__ == "__main__":
-    # Example usage of the DNN class
-    dnn_manager = DNN(num_layers=2, num_neurons=8, num_epochs=1000)
-
     # Example training features (replace with actual data)
-    train_features = np.asarray([[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 6]])
+    train_features = np.asarray([[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 6]], dtype=np.float32)
 
     # Initialise and adapt the normaliser with the training features
     normaliser = keras.layers.Normalization(axis=-1)
     normaliser.adapt(np.array(train_features))
 
+    # Decide the outputs
     label_cols = ["R_p"]
 
-    dnn = dnn_manager.generate_model(train_features, normaliser, label_cols)
-    dnn.fit(train_features, label_cols)
+    # Generate and compile the model
+    dnn_manager = DNNManager.generate_model(num_layers=4,
+                                     num_neurons=8,
+                                     input_shape=train_features.shape[1:],
+                                     normaliser=normaliser,
+                                     num_outputs=len(label_cols))
+    dnn_model = dnn_manager.model
+
+    # Input data needs to be a proper Keras input tensor for this to work, will wait on data processsing pipeline
+    # dnn_model.compile(loss='mean_absolute_error',
+    #                     optimizer=keras.optimizers.Adam(learning_rate=5e-3),
+    #                     metrics=['mean_absolute_error'])
+    # dnn_model.fit(train_features, label_cols)
