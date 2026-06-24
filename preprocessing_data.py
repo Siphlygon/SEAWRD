@@ -8,7 +8,7 @@ class DataPreprocessor:
         self.features = features
         self.label = label
 
-    def preprocessing(self, self.features = ["x_core'", "x_H2O", "T_irr", "M_p"], self.label = ["R_p"]):
+    def preprocessing(self):
         """ Data preprocesing
         Produce normalizer, test and train dataframes ready for input to keras
 
