@@ -356,7 +356,7 @@ if __name__ == "__main__":
         "R_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
         "M_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         "M_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-        "errcode": [0, 0, 1, 1, 1, 1],
+        "errcode": [0, 0, 1, 0, 0, 0],
     }
     df = pd.DataFrame(data)
     preprocessor = DataPreprocessor(df, label="R_p", features=["R_a", "R_b", "M_a", "M_b"])
