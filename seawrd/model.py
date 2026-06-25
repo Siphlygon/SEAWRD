@@ -3,6 +3,7 @@ from __future__ import annotations
 import pickle
 import re
 from pathlib import Path
+from typing import Any
 
 import keras
 import numpy as np
@@ -16,7 +17,8 @@ class DNNManager:
     def __init__(self,
                  model : keras.Sequential,
                  history : dict | None,
-                 version : int):
+                 version : int,
+                 model_name : str):
         """
         Initialises the DNN class. Depending on the parameters, it either loads an existing model or generates a new one
         and saves it. The model is then compiled and ready for training or evaluation.
@@ -29,10 +31,13 @@ class DNNManager:
             The training history of the model, if available. If None, it indicates that the model has not been trained yet.
         version : int
             The version number of the model. This is used for saving and loading different versions of the model.
+        model_name : str
+            The name of the model. This is used for saving and loading the model files.
         """
         self.model = model
         self.history = history
         self.version = version
+        self.model_name = model_name
 
     @classmethod
     def from_new_model(cls,
@@ -78,7 +83,10 @@ class DNNManager:
         # Add output layer
         model.add(keras.layers.Dense(num_outputs))
 
-        return cls(model=model, history=None, version=0)
+        # Generate a model name based on the architecture
+        model_name = f"R({num_layers}x{num_neurons})_{input_shape[0]}i_{num_outputs}o"
+
+        return cls(model=model, history=None, version=0, model_name=model_name)
 
     @classmethod
     def from_previous_model(cls,
@@ -103,9 +111,41 @@ class DNNManager:
         DNNManager
             The DNNManager instance with the loaded model, history, and version.
         """
-        temp_manager = cls(model=keras.Sequential(), history=None, version=0)
+        temp_manager = cls(model=keras.Sequential(), history=None, version=0, model_name=model_name)
         model, history, version = temp_manager.get_model_version(model_dir, model_name, version)
-        return cls(model=model, history=history, version=version)
+        return cls(model=model, history=history, version=version, model_name=model_name)
+
+
+    # ---------- MODEL INFORMATION ----------
+    def get_model_info(self) -> dict[str, Any]:
+        """
+        Retrieves information about the model, including its name, number of parameters, and training history.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary containing the model's name, number of parameters, and training history.
+        """
+        return {
+            "name": self.model.name,
+            "num_param": self.model.count_params(),
+            "history": self.history
+        }
+
+    def create_model_name(self) -> str:
+        """
+        Creates a model name based on the architecture of the model.
+
+        Returns
+        -------
+        str
+            The generated model name in the format "R(num_layers x num_neurons)_{num_inputs}i_{num_outputs}o".
+        """
+        num_layers = len(self.model.layers) - 2  # Exclude input and output layers
+        num_neurons = self.model.layers[1].units if num_layers > 0 else 0
+        num_inputs = self.model.input_shape[-1] if self.model.input_shape else 0
+        num_outputs = self.model.output_shape[-1] if self.model.output_shape else 0
+        return f"R({num_layers}x{num_neurons})_{num_inputs}i_{num_outputs}o)"
 
 
     # ---------- MODEL SAVING AND LOADING ----------
@@ -140,7 +180,7 @@ class DNNManager:
             "history": base.with_name(base.name + "_history.pkl"),
             "plots": base.with_name(base.name + "_plots.png"),
         }
-    
+
     def get_latest_version(self,
                        model_dir : Path | str,
                        model_name : str,
