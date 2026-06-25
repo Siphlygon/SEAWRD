@@ -35,7 +35,7 @@ class DNNManager:
         self.version = version
 
     @classmethod
-    def generate_model(cls,
+    def from_new_model(cls,
                        num_layers : int,
                        num_neurons : int,
                        input_shape : tuple[int, ...],
@@ -43,7 +43,8 @@ class DNNManager:
                        num_outputs : int) -> DNNManager:
         """
         Generates a Keras Sequential model, using an input layer, normalisation, num_layers hidden dense layers of
-        num_neurons each, and an output layer specified by labels_cols.
+        num_neurons each, and an output layer specified by labels_cols, and creates a DNNManager instance with the
+        generated model, an empty history, and version 0.
 
         Parameters
         ----------
@@ -80,28 +81,66 @@ class DNNManager:
         return cls(model=model, history=None, version=0)
 
     @classmethod
-    def load_model(cls,
-                   model_path : Path | str) -> DNNManager:
+    def from_previous_model(cls,
+                           model_dir : Path | str,
+                           model_name : str,
+                           version : int | None = None) -> DNNManager:
         """
-        Loads a Keras model from the specified path.
+        Loads a previously saved Keras model from the specified path and creates a DNNManager instance with the loaded
+        model, history, and version.
 
         Parameters
         ----------
-        model_path : Path | str
-            The path to the saved Keras model.
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the model.
+        version : int | None, optional
+            The version number of the model to load, by default None (loads the latest version).
 
         Returns
         -------
         DNNManager
             The DNNManager instance with the loaded model, history, and version.
         """
-        if isinstance(model_path, str):
-            model_path = Path(model_path)
-
-        return cls(model=keras.models.load_model(model_path), history=None, version=0)
+        temp_manager = cls(model=keras.Sequential(), history=None, version=0)
+        model, history, version = temp_manager.get_model_version(model_dir, model_name, version)
+        return cls(model=model, history=history, version=version)
 
 
     # ---------- MODEL SAVING AND LOADING ----------
+    def _get_model_paths(self,
+                        model_dir : Path | str,
+                        model_name : str,
+                        version : int) -> dict[str, Path]:
+        """
+        Get the paths for the model, history, and plots for a specific version.
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the model.
+        version : int
+            The version number of the model.
+
+        Returns
+        -------
+        dict[str, Path]
+            A dictionary containing the paths for the model, history, and plots.
+        """
+        if isinstance(model_dir, str):
+            model_dir = Path(model_dir)
+
+        base = model_dir / f"{model_name}_v{version}"
+
+        return {
+            "model": base.with_name(base.name + "_model.keras"),
+            "history": base.with_name(base.name + "_history.pkl"),
+            "plots": base.with_name(base.name + "_plots.png"),
+        }
+    
     def get_latest_version(self,
                        model_dir : Path | str,
                        model_name : str,
@@ -141,38 +180,6 @@ class DNNManager:
 
         return max(versions) if versions else 0
 
-    def get_model_paths(self,
-                        model_dir : Path | str,
-                        model_name : str,
-                        version : int) -> dict[str, Path]:
-        """
-        Get the paths for the model, history, and plots for a specific version.
-
-        Parameters
-        ----------
-        model_dir : Path | str
-            The directory containing the model files.
-        model_name : str
-            The name of the model.
-        version : int
-            The version number of the model.
-
-        Returns
-        -------
-        dict[str, Path]
-            A dictionary containing the paths for the model, history, and plots.
-        """
-        if isinstance(model_dir, str):
-            model_dir = Path(model_dir)
-
-        base = model_dir / f"{model_name}_v{version}"
-
-        return {
-            "model": base.with_name(base.name + "_model.keras"),
-            "history": base.with_name(base.name + "_history.pkl"),
-            "plots": base.with_name(base.name + "_plots.png"),
-        }
-
     def save_model_version(self,
                            model : keras.Model,
                            history : keras.callbacks.History,
@@ -207,7 +214,7 @@ class DNNManager:
         model_dir.mkdir(parents=True, exist_ok=True)
 
         # Get the paths for the model and history files
-        paths = self.get_model_paths(model_dir, model_name, version)
+        paths = self._get_model_paths(model_dir, model_name, version)
 
         # Save the model and history
         model.save(paths["model"])
@@ -220,12 +227,12 @@ class DNNManager:
 
         return paths
 
-    def load_model_version(self,
+    def get_model_version(self,
                            model_dir : Path | str,
                            model_name : str,
                            version : int | None = None) -> tuple[keras.Model, dict | None, int]:
         """
-        Load a specific version of the model and its training history.
+        Retrieves a specific version of the model and its training history.
 
         Parameters
         ----------
@@ -257,7 +264,7 @@ class DNNManager:
         if version == 0:
             raise FileNotFoundError(f"No saved model found for '{model_name}'.")
 
-        paths = self.get_model_paths(model_dir, model_name, version)
+        paths = self._get_model_paths(model_dir, model_name, version)
         model = keras.models.load_model(paths["model"])
 
         history = None
@@ -268,6 +275,27 @@ class DNNManager:
         print(f"Loaded model version v{version}")
 
         return model, history, version
+
+    def load_model_version(self,
+                           model_dir : Path | str,
+                           model_name : str,
+                           version : int | None = None):
+        """
+        Loads a specific version of the model and its training history into the DNNManager.
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the saved model.
+        model_name : str
+            The name of the model.
+        version : int | None, optional
+            The version number of the model to load. If None, loads the latest version, by default None
+        """
+        model, history, version = self.get_model_version(model_dir, model_name, version)
+        self.model = model
+        self.history = history
+        self.version = version
 
 
 if __name__ == "__main__":
@@ -282,11 +310,11 @@ if __name__ == "__main__":
     label_cols = ["R_p"]
 
     # Generate and compile the model
-    dnn_manager = DNNManager.generate_model(num_layers=4,
-                                     num_neurons=8,
-                                     input_shape=train_features.shape[1:],
-                                     normaliser=normaliser,
-                                     num_outputs=len(label_cols))
+    dnn_manager = DNNManager.from_new_model(num_layers=4,
+                                            num_neurons=8,
+                                            input_shape=train_features.shape[1:],
+                                            normaliser=normaliser,
+                                            num_outputs=len(label_cols))
     dnn_model = dnn_manager.model
 
     # Input data needs to be a proper Keras input tensor for this to work, will wait on data processsing pipeline
