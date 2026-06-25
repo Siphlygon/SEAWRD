@@ -84,7 +84,7 @@ class DNNManager:
         model.add(keras.layers.Dense(num_outputs))
 
         # Generate a model name based on the architecture
-        model_name = f"R({num_layers}x{num_neurons})_{input_shape[0]}i_{num_outputs}o"
+        model_name = f"R({num_layers}x{num_neurons}_{input_shape[0]}i_{num_outputs}o)"
 
         return cls(model=model, history=None, version=0, model_name=model_name)
 

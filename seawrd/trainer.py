@@ -48,8 +48,8 @@ class DNNTrainer:
         **kwargs
             Additional keyword arguments to be passed to the DNNManager for model creation or loading.
         """
-        assert load_existing and version != 0, "If load_existing is True, version must be provided."
-        assert load_existing and model_name is not None, "If load_existing is True, model_name must be provided."
+        assert not (load_existing and version != 0), "If load_existing is True, version must be provided."
+        assert not (load_existing and model_name is not None), "If load_existing is True, model_name must be provided."
 
         if not load_existing:
             self.model_manager = DNNManager.from_new_model(**kwargs)
