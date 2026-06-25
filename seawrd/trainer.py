@@ -1,9 +1,9 @@
 import keras
 import numpy as np
 import pandas as pd
-import tensorflow_docs
+import tensorflow_docs.modeling
 
-from seawrd.model import DNNManager
+from model import DNNManager
 
 
 class DNNTrainer:
@@ -146,6 +146,23 @@ class DNNTrainer:
         error = actual_values - predictions
         return error
 
+    def print_architecture_performance(self):
+        """
+        Print the performance metrics of the model's architecture, including the model name, number of parameters,
+        and statistics about the training and validation losses. This method provides a quick overview of the model's
+        performance after training, allowing for easy comparison between different model architectures or training runs.
+        """
+        print(f"name: {self.model.name}")
+        print(f"num_param: {self.model.count_params()}")
+        print(f"loss_min: {np.min(self.losses)}")
+        print(f"loss_max: {np.max(self.losses)}")
+        print(f"loss_mean: {np.mean(self.losses)}")
+        print(f"loss_stdev: {np.std(self.losses)}")
+        print(f"val_loss_min: {np.min(self.val_losses)}")
+        print(f"val_loss_max: {np.max(self.val_losses)}")
+        print(f"val_loss_mean: {np.mean(self.val_losses)}")
+        print(f"val_loss_stdev: {np.std(self.val_losses)}")
+
     # ---------- MAIN TRAINING LOOP ----------
     def _train_single_model(self,
                            model : keras.Model,
@@ -205,6 +222,8 @@ class DNNTrainer:
     def train_models(self,
                      input_features: pd.DataFrame,
                      input_labels: pd.Series,
+                     test_features: pd.DataFrame,
+                     test_labels: pd.Series,
                      num_models: int = 10):
         """
         Train multiple models with different random initializations and keep the best one based on validation loss. This
@@ -213,16 +232,21 @@ class DNNTrainer:
         Parameters
         ----------
         input_features : pd.DataFrame
-            _description_
+            The features of the input dataset, which will be used for training and validation.
         input_labels : pd.Series
-            _description_
+            The labels of the input dataset, which will be split into training and validation sets based on the
+            validation_split parameter.
+        test_features : pd.DataFrame
+            The features of the test dataset.
+        test_labels : pd.Series
+            The labels of the test dataset.
         num_models : int, optional
-            _description_, by default 10
+            The number of models to train, by default 10
         """
-        # beginning of actual training
         best_model = None
         best_history = None
         best_val = np.inf
+
         rp_means = np.zeros(num_models)
         rp_stds = np.zeros(num_models)
         losses = np.zeros(num_models)
@@ -246,8 +270,8 @@ class DNNTrainer:
                 best_history = history
 
             # records statistics about each model
-            rp_error = self._evaluate_model(test_features=None,
-                                            test_labels=None)
+            rp_error = self._evaluate_model(test_features=test_features,
+                                            test_labels=test_labels)
             rp_means[seed] = np.mean(rp_error)
             rp_stds[seed] = np.std(rp_error)
             # list_num_epoch[seed] = float(len(history.history['loss']))
@@ -261,24 +285,52 @@ class DNNTrainer:
                                               self.model_name,
                                               self.version)
 
+        # saves the statistics about all models
+        self.losses = losses
+        self.val_losses = val_losses
+
         return rp_means, rp_stds, losses, val_losses
 
 
 if __name__ == "__main__":
     # because our DNN are small in size, the final result depends on our initial (random) state. we train the same
     # multiple with N_models different initial conditions, and keep the best + some statistics.
-    overwrite_existing = True
-    current_version = 0
+
+    # Create some dummy data for training
+    NUM_SAMPLES = 800
+    NUM_FEATURES = 10
+    input_features = pd.DataFrame(np.random.rand(NUM_SAMPLES, NUM_FEATURES),
+                                  columns=[f"feature_{i}" for i in range(NUM_FEATURES)])
+    input_labels = pd.Series(np.random.rand(NUM_SAMPLES), name="target")
+
+    TEST_SAMPLES = 200
+    test_features = pd.DataFrame(np.random.rand(TEST_SAMPLES, NUM_FEATURES),
+                                 columns=[f"feature_{i}" for i in range(NUM_FEATURES)])
+    test_labels = pd.Series(np.random.rand(TEST_SAMPLES), name="target")
+
+    # calibrate a normaliser
+    normaliser = keras.layers.Normalization(axis=-1)
+    normaliser.adapt(np.array(input_features))
 
     # default values -- could be loaded from config?
-    num_layers = 4
-    num_neurons = 8
-    num_epochs = 1000
+    NUM_LAYERS = 4
+    NUM_NEURONS = 8
+    NUM_EPOCHS = 1000
     dnn_trainer = DNNTrainer(load_existing=False,
-                             num_layers=num_layers,
-                             num_neurons=num_neurons,
-                             num_epochs=num_epochs)
-    dnn_manager = dnn_trainer.model_manager
-    dnn_model = dnn_manager.model
+                             num_layers=NUM_LAYERS,
+                             num_neurons=NUM_NEURONS,
+                             num_epochs=NUM_EPOCHS,
+                             input_shape=(NUM_FEATURES,),
+                             normaliser=normaliser,
+                             num_outputs=1,
+                             version=1,)
 
+    # Train the models
+    rp_means, rp_stds, losses, val_losses = dnn_trainer.train_models(input_features=input_features,
+                                                                    input_labels=input_labels,
+                                                                    test_features=test_features,
+                                                                    test_labels=test_labels,
+                                                                    num_models=5)
 
+    # Print the architecture performance of the best model
+    dnn_trainer.print_architecture_performance()
