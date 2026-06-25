@@ -1,8 +1,9 @@
 import keras
-import tensorflow_docs
-from seawrd.model import DNNManager
 import numpy as np
 import pandas as pd
+import tensorflow_docs
+
+from seawrd.model import DNNManager
 
 
 class DNNTrainer:
@@ -51,9 +52,11 @@ class DNNTrainer:
         if not load_existing:
             self.model_manager = DNNManager.from_new_model(**kwargs)
         else:
-            self.model_manager = DNNManager.from_previous_model(**kwargs)
+            self.model_manager = DNNManager.from_previous_model(model_dir=model_dir,
+                                                                model_name=model_name,
+                                                                version=version,)
 
-        # Model parameters
+        # Model values
         self.model = self.model_manager.model
         self.model_dir = model_dir
         self.model_name = model_name
@@ -65,7 +68,10 @@ class DNNTrainer:
         self.learning_rate = learning_rate
         self.num_epochs = num_epochs
 
-    def generate_callbacks(self,
+        # Initialize the callbacks for training
+        self.callbacks = self._generate_callbacks()
+
+    def _generate_callbacks(self,
                            monitor : str = 'val_loss',
                            lr_factor : float = 0.5,
                            lr_patience : int = 20,
@@ -115,14 +121,147 @@ class DNNTrainer:
         ]
         return callbacks
 
+    def _evaluate_model(self,
+                           test_features: pd.DataFrame,
+                           test_labels: pd.Series):
+        """
+        Evaluate the model's performance on the provided test dataset. This method computes the predictions of the model
+        on the test features and calculates the error by comparing the predictions with the actual test labels.
 
-    def start_training(self,
-                       num_models: int,
-                       input_features: pd.DataFrame,
-                       input_labels: pd.Series):
-        # Add callbacks for learning rate adjustment and early stopping
-        my_callbacks = self.generate_callbacks()
+        Parameters
+        ----------
+        test_features : pd.DataFrame
+            The features of the test dataset on which the model will be evaluated.
+        test_labels : pd.Series
+            The labels of the test dataset against which the model will be evaluated.
 
+        Returns
+        -------
+        np.ndarray
+            The error between the actual test labels and the model's predictions. This is calculated as the difference
+            between the actual values and the predicted values.
+        """
+        predictions = self.model.predict(test_features)
+        actual_values = test_labels.to_numpy()
+        error = actual_values - predictions
+        return error
+
+    # ---------- MAIN TRAINING LOOP ----------
+    def _train_single_model(self,
+                           model : keras.Model,
+                           seed : int,
+                           callbacks : list[keras.callbacks.Callback],
+                           input_features : pd.DataFrame,
+                           input_labels : pd.Series) -> keras.callbacks.History:
+        """
+        Train the provided model using the specified random seed for reproducibility. The training process involves
+        compiling the model, fitting it to the training data, and applying callbacks for learning rate adjustment and
+        early stopping.
+
+        Parameters
+        ----------
+        model : keras.Model
+            The Keras model to be trained.
+        seed : int
+            The random seed for reproducibility.
+        callbacks : list[keras.callbacks.Callback]
+            A list of Keras callbacks to be applied during training, such as learning rate adjustment and early
+            stopping.
+        input_features : pd.DataFrame
+            The features of the input dataset, which will be split into training and validation sets based on the
+            validation_split parameter.
+        input_labels : pd.Series
+            The labels of the input dataset, which will be split into training and validation sets based on the
+            validation_split parameter.
+
+        Returns
+        -------
+        keras.callbacks.History
+            The training history of the model.
+        """
+        # Set random seed for reproducibility and clear previous Keras session
+        keras.utils.set_random_seed(seed)
+        keras.backend.clear_session()
+
+        # todo: consider customising metric?
+
+        # Compile and fit the model
+        model.compile(loss="mean_squared_error",
+                      optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
+                      metrics=["mean_squared_error"])
+
+        history = model.fit(
+            input_features,
+            input_labels,
+            batch_size=self.batch_size,
+            epochs=self.num_epochs,
+            validation_split=self.validation_split,
+            callbacks=callbacks,
+            verbose=0,
+            shuffle=True)
+
+        return history
+
+    def train_models(self,
+                     input_features: pd.DataFrame,
+                     input_labels: pd.Series,
+                     num_models: int = 10):
+        """
+        Train multiple models with different random initializations and keep the best one based on validation loss. This
+        method also collects statistics about each model's performance.
+
+        Parameters
+        ----------
+        input_features : pd.DataFrame
+            _description_
+        input_labels : pd.Series
+            _description_
+        num_models : int, optional
+            _description_, by default 10
+        """
+        # beginning of actual training
+        best_model = None
+        best_history = None
+        best_val = np.inf
+        rp_means = np.zeros(num_models)
+        rp_stds = np.zeros(num_models)
+        losses = np.zeros(num_models)
+        val_losses = np.zeros(num_models)
+
+        for seed in range(num_models):
+            print(f"Training model {seed}/{num_models}:")
+            history = self._train_single_model(model=self.model,
+                                               seed=seed,
+                                               callbacks=self.callbacks,
+                                               input_features=input_features,
+                                               input_labels=input_labels)
+
+            # records the best
+            val_min = min(history.history['val_loss'])
+            loss_min = min(history.history['loss'])
+            print(f"Final val_loss of model {seed}/{num_models}: {val_min}")
+            if val_min < best_val:
+                best_val = val_min
+                best_model = self.model
+                best_history = history
+
+            # records statistics about each model
+            rp_error = self._evaluate_model(test_features=None,
+                                            test_labels=None)
+            rp_means[seed] = np.mean(rp_error)
+            rp_stds[seed] = np.std(rp_error)
+            # list_num_epoch[seed] = float(len(history.history['loss']))
+            val_losses[seed] = val_min
+            losses[seed] = loss_min
+
+        # once all N_models have been trained, saves the best model
+        self.model_manager.save_model_version(best_model,
+                                              best_history,
+                                              self.model_dir,
+                                              self.model_name,
+                                              self.version)
+
+        return rp_means, rp_stds, losses, val_losses
 
 
 if __name__ == "__main__":
@@ -141,3 +280,5 @@ if __name__ == "__main__":
                              num_epochs=num_epochs)
     dnn_manager = dnn_trainer.model_manager
     dnn_model = dnn_manager.model
+
+
