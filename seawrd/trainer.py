@@ -16,7 +16,7 @@ class DNNTrainer:
     def __init__(self,
                  load_existing: bool = False,
                  model_dir: str = "models/",
-                 model_name: str = "dnn_model",
+                 model_name: str | None = None,
                  version: int = 0,
                  num_epochs: int = 1000,
                  batch_size: int = 256,
@@ -48,6 +48,8 @@ class DNNTrainer:
         **kwargs
             Additional keyword arguments to be passed to the DNNManager for model creation or loading.
         """
+        assert load_existing and version != 0, "If load_existing is True, version must be provided."
+        assert load_existing and model_name is not None, "If load_existing is True, model_name must be provided."
 
         if not load_existing:
             self.model_manager = DNNManager.from_new_model(**kwargs)
@@ -59,7 +61,7 @@ class DNNTrainer:
         # Model values
         self.model = self.model_manager.model
         self.model_dir = model_dir
-        self.model_name = model_name
+        self.model_name = self.model_manager.model_name if model_name is None else model_name
         self.version = version
 
         # Training hyperparameters
@@ -152,6 +154,8 @@ class DNNTrainer:
         and statistics about the training and validation losses. This method provides a quick overview of the model's
         performance after training, allowing for easy comparison between different model architectures or training runs.
         """
+        assert hasattr(self, 'losses'), "The model has not been trained yet. Please train the model before printing performance metrics."
+
         print(f"name: {self.model.name}")
         print(f"num_param: {self.model.count_params()}")
         print(f"loss_min: {np.min(self.losses)}")
@@ -162,6 +166,7 @@ class DNNTrainer:
         print(f"val_loss_max: {np.max(self.val_losses)}")
         print(f"val_loss_mean: {np.mean(self.val_losses)}")
         print(f"val_loss_stdev: {np.std(self.val_losses)}")
+
 
     # ---------- MAIN TRAINING LOOP ----------
     def _train_single_model(self,
@@ -199,8 +204,6 @@ class DNNTrainer:
         # Set random seed for reproducibility and clear previous Keras session
         keras.utils.set_random_seed(seed)
         keras.backend.clear_session()
-
-        # todo: consider customising metric?
 
         # Compile and fit the model
         model.compile(loss="mean_squared_error",
