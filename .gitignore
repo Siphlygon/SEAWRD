@@ -1,3 +1,10 @@
+# Ignore models produced by the training process
+seawrd/models/
+
+# Ignore VSCode settings
+.vscode/
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

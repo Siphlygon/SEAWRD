@@ -18,7 +18,6 @@ class DataPreprocessor:
     ready for a Keras regression model.
     """
 
-    DEFAULT_COLUMN_RENAMES = {"x_core'": "x_core"}
     DERIVED_COLUMNS = {
         "R_p": ("R_a", "R_b"),
         "M_p": ("M_a", "M_b"),
@@ -91,22 +90,6 @@ class DataPreprocessor:
             raise ValueError("test_size must be a float between 0 and 1")
         if self.label is not None and not isinstance(self.label, str):
             raise TypeError("label must be a string")
-
-    def _rename_columns(self, df: DataFrame) -> DataFrame:
-        """
-        Rename columns in the DataFrame based on DEFAULT_COLUMN_RENAMES.
-
-        Parameters
-        ----------
-        df : DataFrame
-            Input DataFrame to rename columns.
-
-        Returns
-        -------
-        DataFrame
-            DataFrame with renamed columns.
-        """
-        return df.rename(columns=self.DEFAULT_COLUMN_RENAMES)
 
     def _filter_quality(self, df: DataFrame) -> DataFrame:
         """
@@ -208,8 +191,8 @@ class DataPreprocessor:
 
     def prepare(self) -> None:
         """
-        Prepare the DataFrame for training by validating inputs, renaming columns, filtering poor-quality rows, deriving
-        new columns, and inferring features and label.
+        Prepare the DataFrame for training by validating inputs, filtering poor-quality rows, deriving new columns, and
+        inferring features and label.
 
         Raises
         ------
@@ -218,8 +201,9 @@ class DataPreprocessor:
         """
         self._validate_inputs()
 
-        df = self._rename_columns(self.df)
-        df = self._filter_quality(df)
+        # todo: need to add R_a + R_b
+
+        df = self._filter_quality(self.df)
         df = self._derive_columns(df)
 
         self.label_name_ = self._infer_label(df)
