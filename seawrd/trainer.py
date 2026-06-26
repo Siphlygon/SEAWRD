@@ -2,6 +2,7 @@ import keras
 import numpy as np
 import pandas as pd
 import tensorflow_docs.modeling
+import matplotlib.pyplot as plt
 
 from model import DNNManager
 
@@ -156,16 +157,51 @@ class DNNTrainer:
         """
         assert hasattr(self, 'losses'), "The model has not been trained yet. Please train the model before printing performance metrics."
 
-        print(f"name: {self.model.name}")
-        print(f"num_param: {self.model.count_params()}")
-        print(f"loss_min: {np.min(self.losses)}")
-        print(f"loss_max: {np.max(self.losses)}")
-        print(f"loss_mean: {np.mean(self.losses)}")
-        print(f"loss_stdev: {np.std(self.losses)}")
-        print(f"val_loss_min: {np.min(self.val_losses)}")
-        print(f"val_loss_max: {np.max(self.val_losses)}")
-        print(f"val_loss_mean: {np.mean(self.val_losses)}")
+        print(f"name:           {self.model.name}")
+        print(f"num_param:      {self.model.count_params()}")
+        print(f"loss_min:       {np.min(self.losses)}")
+        print(f"loss_max:       {np.max(self.losses)}")
+        print(f"loss_mean:      {np.mean(self.losses)}")
+        print(f"loss_stdev:     {np.std(self.losses)}")
+        print(f"val_loss_min:   {np.min(self.val_losses)}")
+        print(f"val_loss_max:   {np.max(self.val_losses)}")
+        print(f"val_loss_mean:  {np.mean(self.val_losses)}")
         print(f"val_loss_stdev: {np.std(self.val_losses)}")
+
+    def print_loss_curve(self, log_y : bool = True, log_x : bool = True):
+        """
+        Print the loss curve of the best model after training. This method plots the training and validation losses
+        over the epochs, providing a visual representation of the model's learning process. The loss curve can help in
+        diagnosing issues such as overfitting or underfitting and in understanding how well the model has learned from
+        the training data.
+        
+        Parameters
+        ----------
+        log_y : bool, optional
+            Whether to use a logarithmic scale for the y-axis (loss values), by default True. This can be useful for
+            visualizing loss values that span several orders of magnitude.
+        log_x : bool, optional
+            Whether to use a logarithmic scale for the x-axis (epoch values), by default True. This can be useful for
+            visualizing training progress over many epochs.
+        """
+        assert hasattr(self, 'best_history'), "The model has not been trained yet. Please train the model before printing the loss curve."
+
+        plt.plot(self.best_history.history["loss"], label="training set", alpha=0.5, color="indigo")
+        plt.plot(self.best_history.history["val_loss"], label="validation set", alpha=0.5, color="seagreen")
+        plt.legend()
+        plt.title("Loss Function ($R_{\\oplus}$)")
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss ($R_{\\oplus}$)")
+        if log_x:
+            plt.xscale("log")
+        if log_y:
+            plt.yscale("log")
+        plt.grid()
+
+        plt.savefig(self.model.name+"_plot_loss.png", dpi=300)
+        plt.show()
+        plt.close()
+
 
 
     # ---------- MAIN TRAINING LOOP ----------
@@ -246,9 +282,9 @@ class DNNTrainer:
         num_models : int, optional
             The number of models to train, by default 10
         """
-        best_model = None
-        best_history = None
-        best_val = np.inf
+        self.best_model = None
+        self.best_history = None
+        self.best_val = np.inf
 
         rp_means = np.zeros(num_models)
         rp_stds = np.zeros(num_models)
@@ -267,10 +303,10 @@ class DNNTrainer:
             val_min = min(history.history['val_loss'])
             loss_min = min(history.history['loss'])
             print(f"Final val_loss of model {seed}/{num_models}: {val_min}")
-            if val_min < best_val:
-                best_val = val_min
-                best_model = self.model
-                best_history = history
+            if val_min < self.best_val:
+                self.best_val = val_min
+                self.best_model = self.model
+                self.best_history = history
 
             # records statistics about each model
             rp_error = self._evaluate_model(test_features=test_features,
@@ -282,8 +318,8 @@ class DNNTrainer:
             losses[seed] = loss_min
 
         # once all N_models have been trained, saves the best model
-        self.model_manager.save_model_version(best_model,
-                                              best_history,
+        self.model_manager.save_model_version(self.best_model,
+                                              self.best_history,
                                               self.model_dir,
                                               self.model_name,
                                               self.version)
