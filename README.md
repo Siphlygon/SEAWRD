@@ -27,7 +27,7 @@ This is what **S**urrogate **E**mulator for **A**quatic **W**orld **R**adius **D
 
 SEAWRD is written in Python and was pursued as a part of Code/Astro Workshop 2026 by Group 13. The authors of this package are:
 
-|Ashley Parr|Bishwash Devkota|Fredi Quisipe|Ian Rain-water|
+|Ashley Parr|Bishwash Devkota|Fredi Quisipe|Ian Rain-Water|
 |-----|----|----|-----|
 
 
