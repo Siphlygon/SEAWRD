@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple, Union
+import os
 
+os.environ["KERAS_BACKEND"] = "tensorflow" 
 import keras
 import numpy as np
 import pandas as pd
@@ -200,8 +202,6 @@ class DataPreprocessor:
             If no feature columns are identified for training.
         """
         self._validate_inputs()
-
-        # todo: need to add R_a + R_b
 
         df = self._filter_quality(self.df)
         df = self._derive_columns(df)

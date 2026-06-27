@@ -1,3 +1,6 @@
+import os
+
+os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
 import numpy as np
 import pandas as pd
@@ -92,11 +95,11 @@ class DNNTrainer:
         lr_factor : float, optional
             The factor by which the learning rate will be reduced, by default 0.5.
         lr_patience : int, optional
-            The number of epochs with no improvement after which learning rate will be reduced, by default 20
+            The number of epochs with no improvement after which learning rate will be reduced, by default 15
         min_lr : float, optional
-            The lower bound on the learning rate, by default 1e-6.
+            The lower bound on the learning rate, by default 1e-7.
         early_stopping_patience : int, optional
-            The number of epochs with no improvement after which training will be stopped, by default 50.
+            The number of epochs with no improvement after which training will be stopped, by default 30.
         verbose : int, optional
             The verbosity mode, by default 1, meaning that messages will be printed when reducing learning rate or
             stopping early.
@@ -197,6 +200,8 @@ class DNNTrainer:
         if log_y:
             plt.yscale("log")
         plt.grid()
+        # ignore first 100 epochs for y-axis limit
+        # plt.ylim(ymax=max(max(self.best_history.history["loss"][100:]), max(self.best_history.history["val_loss"][100:])))
 
         plt.savefig(self.model.name+"_plot_loss.png", dpi=300)
         plt.show()
