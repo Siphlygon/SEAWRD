@@ -152,6 +152,27 @@ class DNNTrainer:
         error = actual_values - predictions
         return error
 
+    def _round_to_n_sig_figs(self, x: float, n: int) -> float:
+        """
+        Round a number to a specified number of significant figures.
+
+        Parameters
+        ----------
+        x : float
+            The number to be rounded.
+        n : int
+            The number of significant figures to round to.
+
+        Returns
+        -------
+        float
+            The number rounded to the specified number of significant figures.
+        """
+        if x == 0:
+            return 0.0
+        else:
+            return round(x, -int(np.floor(np.log10(abs(x)))) + (n - 1))
+
     def print_architecture_performance(self):
         """
         Print the performance metrics of the model's architecture, including the model name, number of parameters,
@@ -162,21 +183,26 @@ class DNNTrainer:
 
         print(f"name:           {self.model.name}")
         print(f"num_param:      {self.model.count_params()}")
-        print(f"loss_min:       {np.min(self.losses)}")
-        print(f"loss_max:       {np.max(self.losses)}")
-        print(f"loss_mean:      {np.mean(self.losses)}")
-        print(f"loss_stdev:     {np.std(self.losses)}")
-        print(f"val_loss_min:   {np.min(self.val_losses)}")
-        print(f"val_loss_max:   {np.max(self.val_losses)}")
-        print(f"val_loss_mean:  {np.mean(self.val_losses)}")
-        print(f"val_loss_stdev: {np.std(self.val_losses)}")
+        print(f"num_epoch_mean: {self._round_to_n_sig_figs(np.mean(self.list_num_epoch), 5)}")
+        print(f"loss_min:       {self._round_to_n_sig_figs(np.min(self.losses), 5)}")
+        print(f"loss_max:       {self._round_to_n_sig_figs(np.max(self.losses), 5)}")
+        print(f"loss_mean:      {self._round_to_n_sig_figs(np.mean(self.losses), 5)}")
+        print(f"loss_stdev:     {self._round_to_n_sig_figs(np.std(self.losses), 5)}")
+        print(f"val_loss_min:   {self._round_to_n_sig_figs(np.min(self.val_losses), 5)}")
+        print(f"val_loss_max:   {self._round_to_n_sig_figs(np.max(self.val_losses), 5)}")
+        print(f"val_loss_mean:  {self._round_to_n_sig_figs(np.mean(self.val_losses), 5)}")
+        print(f"val_loss_stdev: {self._round_to_n_sig_figs(np.std(self.val_losses), 5)}")
 
-    def print_loss_curve(self, log_y : bool = True, log_x : bool = True):
+    def plot_loss_curve(self,
+                        log_y : bool = True,
+                        log_x : bool = True,
+                        max_y : float = None):
         """
-        Print the loss curve of the best model after training. This method plots the training and validation losses
-        over the epochs, providing a visual representation of the model's learning process. The loss curve can help in
-        diagnosing issues such as overfitting or underfitting and in understanding how well the model has learned from
-        the training data.
+        Plot the loss curve of the best model after training.
+        
+        This method plots the training and validation losses over the epochs, providing a visual representation of the
+        model's learning process. The loss curve can help in diagnosing issues such as overfitting or underfitting and
+        in understanding how well the model has learned from the training data.
         
         Parameters
         ----------
@@ -186,6 +212,9 @@ class DNNTrainer:
         log_x : bool, optional
             Whether to use a logarithmic scale for the x-axis (epoch values), by default True. This can be useful for
             visualizing training progress over many epochs.
+        max_y : float, optional
+            The maximum value for the y-axis (loss values), by default None. This can be useful for setting a fixed
+            upper limit for the y-axis.
         """
         assert hasattr(self, 'best_history'), "The model has not been trained yet. Please train the model before printing the loss curve."
 
@@ -202,17 +231,17 @@ class DNNTrainer:
         plt.grid()
         # ignore first 100 epochs for y-axis limit
         # plt.ylim(ymax=max(max(self.best_history.history["loss"][100:]), max(self.best_history.history["val_loss"][100:])))
+        if max_y is not None:
+            plt.ylim(ymax=max_y)
 
         plt.savefig(self.model.name+"_plot_loss.png", dpi=300)
         plt.show()
         plt.close()
 
 
-
     # ---------- MAIN TRAINING LOOP ----------
     def _train_single_model(self,
                            model : keras.Model,
-                           seed : int,
                            callbacks : list[keras.callbacks.Callback],
                            input_features : pd.DataFrame,
                            input_labels : pd.Series) -> keras.callbacks.History:
@@ -225,8 +254,6 @@ class DNNTrainer:
         ----------
         model : keras.Model
             The Keras model to be trained.
-        seed : int
-            The random seed for reproducibility.
         callbacks : list[keras.callbacks.Callback]
             A list of Keras callbacks to be applied during training, such as learning rate adjustment and early
             stopping.
@@ -242,10 +269,6 @@ class DNNTrainer:
         keras.callbacks.History
             The training history of the model.
         """
-        # Set random seed for reproducibility and clear previous Keras session
-        keras.utils.set_random_seed(seed)
-        keras.backend.clear_session()
-
         # Compile and fit the model
         model.compile(loss="mean_squared_error",
                       optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
@@ -295,11 +318,19 @@ class DNNTrainer:
         rp_stds = np.zeros(num_models)
         losses = np.zeros(num_models)
         val_losses = np.zeros(num_models)
+        list_num_epoch = np.zeros(num_models)
 
         for seed in range(num_models):
             print(f"Training model {seed}/{num_models}:")
-            history = self._train_single_model(model=self.model,
-                                               seed=seed,
+            
+            # Clear the Keras session to free up resources and avoid clutter from old models and layers
+            keras.backend.clear_session()
+
+            # Create a new model for each seed to ensure different initializations
+            keras.utils.set_random_seed(seed)
+            new_model = keras.models.clone_model(self.model)
+
+            history = self._train_single_model(model=new_model,
                                                callbacks=self.callbacks,
                                                input_features=input_features,
                                                input_labels=input_labels)
@@ -310,7 +341,7 @@ class DNNTrainer:
             print(f"Final val_loss of model {seed}/{num_models}: {val_min}")
             if val_min < self.best_val:
                 self.best_val = val_min
-                self.best_model = self.model
+                self.best_model = new_model
                 self.best_history = history
 
             # records statistics about each model
@@ -318,7 +349,7 @@ class DNNTrainer:
                                             test_labels=test_labels)
             rp_means[seed] = np.mean(rp_error)
             rp_stds[seed] = np.std(rp_error)
-            # list_num_epoch[seed] = float(len(history.history['loss']))
+            list_num_epoch[seed] = float(len(history.history['loss']))
             val_losses[seed] = val_min
             losses[seed] = loss_min
 
@@ -332,7 +363,7 @@ class DNNTrainer:
         # saves the statistics about all models
         self.losses = losses
         self.val_losses = val_losses
-
+        self.list_num_epoch = list_num_epoch
         return rp_means, rp_stds, losses, val_losses
 
 
