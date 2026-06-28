@@ -175,6 +175,31 @@ class DNNManager:
         
         return model
 
+    def compile_from_config(self, compile_config: dict) -> None:
+        """
+        Compiles the current model using the provided configuration. This allows for dynamic compilation of the model
+        with different loss functions, optimizers, and metrics.
+
+        Parameters
+        ----------
+        compile_config : dict
+            Configuration dictionary containing compilation parameters such as loss function, optimizer, and metrics.
+        """
+        optimiser_name = compile_config.get("optimizer", "adam")
+
+        if optimiser_name == "adam":
+            optimiser = keras.optimizers.Adam(
+                learning_rate=float(compile_config["learning_rate"])
+            )
+        else:
+            raise NotImplementedError(f"Unsupported optimizer: {optimiser_name}")
+
+        self.model.compile(
+            loss=compile_config.get("loss", "mean_squared_error"),
+            optimizer=optimiser,
+            metrics=compile_config.get("metrics", ["mean_squared_error"]),
+        )
+
 
     # ---------- MODEL INFORMATION ----------
     def get_model_info(self) -> dict[str, Any]:

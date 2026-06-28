@@ -55,8 +55,10 @@ class DNNTrainer:
         assert not (load_existing and version != 0), "If load_existing is True, version must be provided."
         assert not (load_existing and model_name is not None), "If load_existing is True, model_name must be provided."
 
+        self.compile_config = {}
+
         if not load_existing:
-            self.model_manager = DNNManager.from_new_model(**kwargs)
+            self.model_manager = DNNManager.from_config(**kwargs)
         else:
             self.model_manager = DNNManager.from_previous_model(model_dir=model_dir,
                                                                 model_name=model_name,
@@ -281,11 +283,9 @@ class DNNTrainer:
         """
         # Generate callbacks for training
         callbacks = self._generate_callbacks()
-        
+
         # Compile and fit the model
-        model.compile(loss="mean_squared_error",
-                      optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
-                      metrics=["mean_squared_error"])
+        self.model_manager.compile_from_config(self.compile_config)
 
         history = model.fit(
             train_features,
