@@ -6,10 +6,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-os.environ["KERAS_BACKEND"] = "tensorflow" 
+os.environ["KERAS_BACKEND"] = "tensorflow"
 
 import keras
 import numpy as np
+
+from config import ConfigManager, ModelConfig, CompileConfig
 
 
 class DNNManager:
@@ -45,7 +47,7 @@ class DNNManager:
 
     @classmethod
     def from_config(cls,
-                    model_config: dict,
+                    model_config: ModelConfig,
                     input_shape: tuple[int, ...],
                     normaliser: keras.layers.Normalization | None = None,) -> "DNNManager":
         """
@@ -54,9 +56,9 @@ class DNNManager:
 
         Parameters
         ----------
-        model_config : dict
-            Configuration dictionary containing model parameters such as number of layers, number of neurons, input
-            shape, number of outputs, etc.
+        model_config : ModelConfig
+            An instance of the ModelConfig dataclass containing model parameters such as number of layers, number of
+            neurons, input shape, number of outputs, etc.
         input_shape : tuple[int, ...]
             The shape of the input features.
         normaliser : keras.layers.Normalization | None, optional
@@ -73,7 +75,7 @@ class DNNManager:
             If normalisation is to be used but the normaliser is not provided.
         """
         # Check if normalisation is to be used and if the normaliser is provided
-        if model_config.get("use_normalisation", True):
+        if model_config.use_normalisation:
             if normaliser is None:
                 raise ValueError("normaliser must be provided when model.use_normalisation=true")
             normalisation_layer = normaliser
@@ -88,18 +90,18 @@ class DNNManager:
         if normalisation_layer is not None:
             model.add(normalisation_layer)
 
-        for _ in range(int(model_config["num_layers"])):
+        for _ in range(int(model_config.num_layers)):
             model.add(keras.layers.Dense(
-                    int(model_config["num_neurons"]),
-                    activation=model_config.get("activation", "relu"),
+                    int(model_config.num_neurons),
+                    activation=model_config.activation,
                 )
             )
 
         # Add the output layer with the specified number of outputs
-        model.add(keras.layers.Dense(int(model_config["num_outputs"])))
+        model.add(keras.layers.Dense(int(model_config.num_outputs)))
 
-        if model_config.get("model_name"):
-            model_name = model_config["model_name"]
+        if model_config.model_name:
+            model_name = model_config.model_name
         else:
             temp_manager = cls(model=model, history=None, version=0, model_name="")
             model_name = temp_manager.create_model_name()
@@ -172,32 +174,33 @@ class DNNManager:
         # Clone the model and copy normalisation weights
         model = keras.models.clone_model(self.model)
         self._copy_normalisation_weights(self.model, model)
-        
+
         return model
 
-    def compile_from_config(self, compile_config: dict) -> None:
+    def compile_from_config(self, compile_config: CompileConfig) -> None:
         """
         Compiles the current model using the provided configuration. This allows for dynamic compilation of the model
-        with different loss functions, optimizers, and metrics.
+        with different loss functions, optimisers, and metrics.
 
         Parameters
         ----------
-        compile_config : dict
-            Configuration dictionary containing compilation parameters such as loss function, optimizer, and metrics.
+        compile_config : CompileConfig
+            An instance of the CompileConfig dataclass containing compilation parameters such as loss function,
+            optimiser, and metrics.
         """
-        optimiser_name = compile_config.get("optimizer", "adam")
+        optimiser_name = compile_config.optimiser
 
         if optimiser_name == "adam":
             optimiser = keras.optimizers.Adam(
-                learning_rate=float(compile_config["learning_rate"])
+                learning_rate=float(compile_config.learning_rate)
             )
         else:
-            raise NotImplementedError(f"Unsupported optimizer: {optimiser_name}")
+            raise NotImplementedError(f"Unsupported optimiser: {optimiser_name}")
 
         self.model.compile(
-            loss=compile_config.get("loss", "mean_squared_error"),
+            loss=compile_config.loss,
             optimizer=optimiser,
-            metrics=compile_config.get("metrics", ["mean_squared_error"]),
+            metrics=compile_config.metrics,
         )
 
 
@@ -430,6 +433,7 @@ if __name__ == "__main__":
     # Initialise and adapt the normaliser with the training features
     normaliser = keras.layers.Normalization(axis=-1)
     normaliser.adapt(np.array(train_features))
+    print("Normaliser adapted with training features.")
 
     # Decide the outputs
     label_cols = ["R_p"]
@@ -442,6 +446,8 @@ if __name__ == "__main__":
         "use_normalisation": True,
         "num_outputs": len(label_cols),
     }
+    config = ModelConfig(**config)
+    print("Model configuration created.")
 
     # Generate and compile the model
     dnn_manager = DNNManager.from_config(
@@ -450,3 +456,4 @@ if __name__ == "__main__":
         normaliser=normaliser
     )
     dnn_model = dnn_manager.model
+    print("Model generated from configuration.")
