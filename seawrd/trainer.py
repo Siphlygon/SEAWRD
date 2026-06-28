@@ -74,9 +74,6 @@ class DNNTrainer:
         self.learning_rate = learning_rate
         self.num_epochs = num_epochs
 
-        # Initialize the callbacks for training
-        self.callbacks = self._generate_callbacks()
-
         # Initialise variables to keep track of the best model and its performance
         self.best_model = None
         self.best_history = None
@@ -133,17 +130,20 @@ class DNNTrainer:
         return callbacks
 
     def _evaluate_model(self,
-                           test_features: pd.DataFrame,
-                           test_labels: pd.Series):
+                        model: keras.Model,
+                        test_features: np.ndarray | pd.DataFrame,
+                        test_labels: np.ndarray | pd.Series):
         """
-        Evaluate the model's performance on the provided test dataset. This method computes the predictions of the model
+        Evaluate a model's performance on the provided test dataset. This method computes the predictions of the model
         on the test features and calculates the error by comparing the predictions with the actual test labels.
 
         Parameters
         ----------
-        test_features : pd.DataFrame
+        model : keras.Model
+            The model to be evaluated.
+        test_features : np.ndarray | pd.DataFrame
             The features of the test dataset on which the model will be evaluated.
-        test_labels : pd.Series
+        test_labels : np.ndarray | pd.Series
             The labels of the test dataset against which the model will be evaluated.
 
         Returns
@@ -152,8 +152,13 @@ class DNNTrainer:
             The error between the actual test labels and the model's predictions. This is calculated as the difference
             between the actual values and the predicted values.
         """
-        predictions = self.model.predict(test_features)
-        actual_values = test_labels.to_numpy()
+        if isinstance(test_features, pd.DataFrame):
+            test_features = test_features.to_numpy()
+        if isinstance(test_labels, pd.Series):
+            test_labels = test_labels.to_numpy()
+
+        predictions = model.predict(test_features).reshape(-1)
+        actual_values = test_labels.reshape(-1)
         error = actual_values - predictions
         return error
 
@@ -247,7 +252,6 @@ class DNNTrainer:
     # ---------- MAIN TRAINING LOOP ----------
     def _train_single_model(self,
                            model : keras.Model,
-                           callbacks : list[keras.callbacks.Callback],
                            train_features : pd.DataFrame,
                            train_labels : pd.Series,
                            val_features : pd.DataFrame,
@@ -261,9 +265,6 @@ class DNNTrainer:
         ----------
         model : keras.Model
             The Keras model to be trained.
-        callbacks : list[keras.callbacks.Callback]
-            A list of Keras callbacks to be applied during training, such as learning rate adjustment and early
-            stopping.
         train_features : pd.DataFrame
             The features of the training dataset.
         train_labels : pd.Series
@@ -278,6 +279,9 @@ class DNNTrainer:
         keras.callbacks.History
             The training history of the model.
         """
+        # Generate callbacks for training
+        callbacks = self._generate_callbacks()
+        
         # Compile and fit the model
         model.compile(loss="mean_squared_error",
                       optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
@@ -340,10 +344,9 @@ class DNNTrainer:
 
             # Create a new model for each seed to ensure different initializations
             keras.utils.set_random_seed(seed)
-            new_model = keras.models.clone_model(self.model)
+            new_model = self.model_manager.clone_model()
 
             history = self._train_single_model(model=new_model,
-                                               callbacks=self.callbacks,
                                                train_features=x_train,
                                                train_labels=y_train,
                                                val_features=x_val,
@@ -359,7 +362,8 @@ class DNNTrainer:
                 self.best_history = history
 
             # records statistics about each model
-            rp_error = self._evaluate_model(test_features=test_features,
+            rp_error = self._evaluate_model(model=new_model,
+                                            test_features=test_features,
                                             test_labels=test_labels)
             rp_means[seed] = np.mean(rp_error)
             rp_stds[seed] = np.std(rp_error)
