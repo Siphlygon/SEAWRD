@@ -1,19 +1,99 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
-from pathlib import Path
-from typing import Any, Literal
+from dataclasses import asdict, dataclass, replace, fields
+from typing import Any, Literal, Mapping
+from typing_extensions import Self
 
 import keras
 
-try:
-    import tomllib  # Python 3.11+, tomlib is part of the standard library
-except ModuleNotFoundError:
-    import tomli as tomllib  # Python <=3.10 fallback, will require the `tomli` package to be installed
+
+class ConfigSection:
+    """
+    Base helper for simple dataclass config sections, with potential for future extensions.
+    """
+
+    @classmethod
+    def from_dict(cls: type[Self], data: Mapping[str, Any] | None = None) -> Self:
+        """
+        Load a dataclass instance from a dictionary, ensuring that only known fields are used for initialisation.
+
+        This allows for creation of dataclass instances (i.e., ConfigSections) from dictionaries while validating that
+        the provided keys match the expected fields of the dataclass.
+
+        Parameters
+        ----------
+        cls : type[Self]
+            The dataclass type to instantiate.
+        data : Mapping[str, Any] | None, optional
+            The dictionary containing the configuration data, by default None
+
+        Returns
+        -------
+        Self
+            An instance of the dataclass initialized with the provided configuration.
+
+        Raises
+        ------
+        ValueError
+            If there are unknown fields in the data dictionary that do not correspond to any fields in the dataclass.
+        """
+        if data is None:
+            data = {}
+
+        # Filter the provided data to only include known fields for the dataclass
+        valid_fields = {field.name for field in fields(cls) if field.init}
+        unknown_fields = set(data) - valid_fields
+
+        if unknown_fields:
+            raise ValueError(
+                f"Unknown fields for {cls.__name__}: {sorted(unknown_fields)}"
+            )
+
+        return cls(**dict(data))
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert the dataclass instance to a dictionary.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary representation of the dataclass instance, including all fields and their values.
+        """
+        return asdict(self)
+
+    def with_update(self: Self, **updates: Any) -> Self:
+        """
+        Create a new instance of the dataclass with updated fields.
+
+        Parameters
+        ----------
+        self : Self
+            The current instance of the dataclass.
+
+        Returns
+        -------
+        Self
+            A new instance of the dataclass with the specified fields updated.
+
+        Raises
+        ------
+        ValueError
+            If there are unknown fields in the updates that do not correspond to any fields in the dataclass.
+        """
+        valid_fields = {field.name for field in fields(self) if field.init}
+        unknown_fields = set(updates) - valid_fields
+
+        if unknown_fields:
+            raise ValueError(
+                f"Unknown fields for {type(self).__name__}: {sorted(unknown_fields)}"
+            )
+
+        return replace(self, **updates)
 
 
 @dataclass(frozen=True)
-class ModelConfig:
+class ModelConfig(ConfigSection):
     """
     Configuration for the model architecture.
     """
@@ -38,7 +118,7 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
-class TrainingConfig:
+class TrainingConfig(ConfigSection):
     """
     Configuration for the training process.
     """
@@ -60,7 +140,7 @@ class TrainingConfig:
 
 
 @dataclass(frozen=True)
-class CompileConfig:
+class CompileConfig(ConfigSection):
     """
     Configuration for compiling the Keras model.
     """
@@ -112,7 +192,7 @@ class CompileConfig:
 
 
 @dataclass(frozen=True)
-class CallbackConfig:
+class CallbackConfig(ConfigSection):
     """
     Configuration for Keras callbacks during training.
     """
@@ -150,7 +230,7 @@ class CallbackConfig:
 
 
 @dataclass(frozen=True)
-class DeviceConfig:
+class DeviceConfig(ConfigSection):
     """
     Configuration for the device on which to run the training (CPU or GPU).
     """
@@ -166,7 +246,7 @@ class DeviceConfig:
 
 
 @dataclass(frozen=True)
-class OutputConfig:
+class OutputConfig(ConfigSection):
     """
     Configuration for output settings, including model saving and plot generation.
     """
@@ -205,144 +285,40 @@ class SEAWRDConfig:
         return asdict(self)
 
 
-class ConfigManager:
-    """
-    A class to manage the loading and validation of the SEAWRD configuration from a TOML file.
-    """
-    def __init__(self, config : SEAWRDConfig, config_path: str | Path | None = None) -> None:
-        """
-        Initialise the ConfigManager with a path to the configuration file and a pre-loaded configuration.
-
-        Parameters
-        ----------
-        config : SEAWRDConfig
-            An instance of the SEAWRDConfig dataclass containing the configuration settings.
-        config_path : str | Path | None
-            The path to the TOML configuration file.
-        """
-        self.config = config
-        self.config_path = Path(config_path) if config_path is not None else None
-
-
     @classmethod
-    def from_toml(cls, path: str | Path) -> ConfigManager:
-        """
-        Create a ConfigManager instance from a TOML configuration file.
-
-        Parameters
-        ----------
-        path : str | Path
-            The path to the TOML configuration file.
-
-        Returns
-        -------
-        ConfigManager
-            An instance of ConfigManager initialized with the loaded configuration.
-        """
-        path = Path(path)
-
-        with path.open("rb") as f:
-            raw = tomllib.load(f)
-
-        config = cls._from_dict(raw)
-        return cls(config=config, config_path=path)
-
-
-    @staticmethod
-    def _from_dict(raw: dict[str, Any]) -> SEAWRDConfig:
+    def from_dict(cls, raw: Mapping[str, Any] | None = None) -> "SEAWRDConfig":
         """
         Create a SEAWRDConfig instance from a dictionary representation.
 
         Parameters
         ----------
-        raw : dict[str, Any]
-            The raw dictionary representation of the configuration.
+        raw : Mapping[str, Any] | None, optional
+            The dictionary representation of the configuration, by default None
 
         Returns
         -------
         SEAWRDConfig
-            An instance of the SEAWRDConfig dataclass initialized with the provided configuration.
-        """
-        return SEAWRDConfig(
-            model=ModelConfig(**raw.get("model", {})),
-            training=TrainingConfig(**raw.get("training", {})),
-            compile=CompileConfig(**raw.get("compile", {})),
-            callbacks=CallbackConfig(**raw.get("callbacks", {})),
-            device=DeviceConfig(**raw.get("device", {})),
-            output=OutputConfig(**raw.get("output", {})),
-        )
-
-
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Convert the current configuration to a dictionary representation.
-
-        Returns
-        -------
-        dict[str, Any]
-            The dictionary representation of the configuration.
-        """
-        return self.config.to_dict()
-
-
-    def with_override(self, dotted_key: str, value: Any) -> "ConfigManager":
-        """
-        Return a new ConfigManager with an updated value for a specific configuration field.
-
-        Example:
-            cfg2 = cfg.with_override("training.batch_size", 2048)
-            cfg3 = cfg.with_override("model.num_neurons", 64)
-
-        Parameters
-        ----------
-        dotted_key : str
-            The dotted key representing the configuration field to update. In format "section.field", e.g.,
-            "training.batch_size".
-        value : Any
-            The new value for the configuration field.
-
-        Returns
-        -------
-        ConfigManager
-            A new ConfigManager instance with the updated value.
+            The initialized SEAWRDConfig instance
 
         Raises
         ------
-        KeyError
-            If the specified section or field is not found in the configuration.
+        ValueError
+            If there are unknown sections in the provided dictionary that do not correspond to any of the expected
+            configuration sections.
         """
-        section_name, field_name = dotted_key.split(".", maxsplit=1)
+        raw = raw or {}
 
-        if not hasattr(self.config, section_name):
-            raise KeyError(f"Unknown config section: {section_name}")
+        valid_sections = {"model", "training", "compile", "callbacks", "device", "output"}
+        unknown_sections = set(raw) - valid_sections
 
-        old_section = getattr(self.config, section_name)
+        if unknown_sections:
+            raise ValueError(f"Unknown config sections: {sorted(unknown_sections)}")
 
-        if not hasattr(old_section, field_name):
-            raise KeyError(f"Unknown config field: {dotted_key}")
-
-        new_section = replace(old_section, **{field_name: value})
-        new_config = replace(self.config, **{section_name: new_section})
-
-        return ConfigManager(config=new_config, config_path=self.config_path)
-
-    def with_overrides(self, overrides: dict[str, Any]) -> "ConfigManager":
-        """
-        Return a new ConfigManager with multiple updated values.
-
-        Parameters
-        ----------
-        overrides : dict[str, Any]
-            A dictionary of dotted keys and their corresponding values to override.
-
-        Returns
-        -------
-        ConfigManager
-            A new ConfigManager instance with the updated values.
-        """
-        manager = self
-
-        for dotted_key, value in overrides.items():
-            manager = manager.with_override(dotted_key, value)
-
-        return manager
+        return cls(
+            model=ModelConfig.from_dict(raw.get("model")),
+            training=TrainingConfig.from_dict(raw.get("training")),
+            compile=CompileConfig.from_dict(raw.get("compile")),
+            callbacks=CallbackConfig.from_dict(raw.get("callbacks")),
+            device=DeviceConfig.from_dict(raw.get("device")),
+            output=OutputConfig.from_dict(raw.get("output")),
+        )

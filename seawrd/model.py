@@ -11,7 +11,7 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
 import numpy as np
 
-from config import ConfigManager, ModelConfig, CompileConfig
+from config import ModelConfig, CompileConfig
 
 
 class DNNManager:
@@ -446,7 +446,7 @@ if __name__ == "__main__":
         "use_normalisation": True,
         "num_outputs": len(label_cols),
     }
-    config = ModelConfig(**config)
+    config = ModelConfig.from_dict(config)
     print("Model configuration created.")
 
     # Generate and compile the model
@@ -457,3 +457,4 @@ if __name__ == "__main__":
     )
     dnn_model = dnn_manager.model
     print("Model generated from configuration.")
+    dnn_model.summary()
