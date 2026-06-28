@@ -261,7 +261,7 @@ class DataPreprocessor:
 
     # ---------- PUBLIC METHODS ----------
     def get_training_data(self,
-                          return_array: bool = False,
+                          return_array: bool = True,
         ) -> Tuple[
                 Optional[keras.layers.Normalization],
                 Union[DataFrame, np.ndarray],
@@ -274,8 +274,9 @@ class DataPreprocessor:
 
         Parameters
         ----------
-        return_array : bool, default=False
-            If True, return NumPy arrays instead of DataFrames/Series.
+        return_array : bool, default=True
+            If True, return NumPy arrays instead of DataFrames/Series. These arrays will be of type float32, suitable
+            for Keras models.
 
         Returns
         -------
