@@ -77,6 +77,11 @@ class DNNTrainer:
         # Initialize the callbacks for training
         self.callbacks = self._generate_callbacks()
 
+        # Initialise variables to keep track of the best model and its performance
+        self.best_model = None
+        self.best_history = None
+        self.best_val = np.inf
+
     def _generate_callbacks(self,
                            monitor : str = 'val_loss',
                            lr_factor : float = 0.5,
@@ -243,8 +248,10 @@ class DNNTrainer:
     def _train_single_model(self,
                            model : keras.Model,
                            callbacks : list[keras.callbacks.Callback],
-                           input_features : pd.DataFrame,
-                           input_labels : pd.Series) -> keras.callbacks.History:
+                           train_features : pd.DataFrame,
+                           train_labels : pd.Series,
+                           val_features : pd.DataFrame,
+                           val_labels : pd.Series) -> keras.callbacks.History:
         """
         Train the provided model using the specified random seed for reproducibility. The training process involves
         compiling the model, fitting it to the training data, and applying callbacks for learning rate adjustment and
@@ -257,12 +264,14 @@ class DNNTrainer:
         callbacks : list[keras.callbacks.Callback]
             A list of Keras callbacks to be applied during training, such as learning rate adjustment and early
             stopping.
-        input_features : pd.DataFrame
-            The features of the input dataset, which will be split into training and validation sets based on the
-            validation_split parameter.
-        input_labels : pd.Series
-            The labels of the input dataset, which will be split into training and validation sets based on the
-            validation_split parameter.
+        train_features : pd.DataFrame
+            The features of the training dataset.
+        train_labels : pd.Series
+            The labels of the training dataset.
+        val_features : pd.DataFrame
+            The features of the validation dataset.
+        val_labels : pd.Series
+            The labels of the validation dataset.
 
         Returns
         -------
@@ -275,11 +284,11 @@ class DNNTrainer:
                       metrics=["mean_squared_error"])
 
         history = model.fit(
-            input_features,
-            input_labels,
+            train_features,
+            train_labels,
             batch_size=self.batch_size,
             epochs=self.num_epochs,
-            validation_split=self.validation_split,
+            validation_data=(val_features, val_labels),
             callbacks=callbacks,
             verbose=0,
             shuffle=True)
@@ -310,10 +319,13 @@ class DNNTrainer:
         num_models : int, optional
             The number of models to train, by default 10
         """
-        self.best_model = None
-        self.best_history = None
-        self.best_val = np.inf
+        # First create the validation set
+        n_val = int(len(input_features) * self.validation_split)
 
+        x_train, x_val = input_features[:-n_val], input_features[-n_val:]
+        y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
+
+        # Initialize arrays to store statistics about each model
         rp_means = np.zeros(num_models)
         rp_stds = np.zeros(num_models)
         losses = np.zeros(num_models)
@@ -332,8 +344,10 @@ class DNNTrainer:
 
             history = self._train_single_model(model=new_model,
                                                callbacks=self.callbacks,
-                                               input_features=input_features,
-                                               input_labels=input_labels)
+                                               train_features=x_train,
+                                               train_labels=y_train,
+                                               val_features=x_val,
+                                               val_labels=y_val)
 
             # records the best
             val_min = min(history.history['val_loss'])
