@@ -1,0 +1,53 @@
+# SEAWRD default configuration file
+
+# This file contains the default configuration settings for the SEAWRD project. Users can modify these settings to customise the behavior of the framework according to their needs.
+
+# Settings related to the neural network model architecture
+[model]
+num_layers = 4              # Number of hidden layers in the neural network
+num_neurons = 8             # Number of neurons in each hidden layer
+num_outputs = 1             # Number of output neurons (for estimating planetary radius, this is typically 1)
+activation = "relu"         # Activation function for the hidden layers (e.g., "relu", "tanh", "sigmoid")
+use_normalisation = true    # Whether to use feature normalisation (recommended for better training performance)
+
+# Settings related to the training process
+[training]
+num_epochs = 200          # Number of training epochs
+batch_size = 1024         # Batch size for training (number of samples per gradient update)
+validation_split = 0.2    # Fraction of the training data to be used for validation (between 0 and 1)
+num_models = 5            # Number of models to train for best model selection
+shuffle = true            # Whether to shuffle the training data before each epoch (recommended for better training performance)
+
+# Settings used for compiling the Keras model, a required step for training
+[compile] 
+loss = "mean_squared_error"         # Loss function to be used during training (e.g., "mean_squared_error", "huber_loss")
+optimiser = "adam"                  # Optimiser to be used during training (e.g., "adam", "sgd") -- ONLY "adam" IS CURRENTLY SUPPORTED
+learning_rate = 5e-3                # Learning rate for the optimiser (controls the step size during gradient descent)
+metrics = ["mean_squared_error"]    # List of metrics to be evaluated during training and validation (e.g., ["mean_squared_error", "mean_absolute_error"])
+steps_per_execution = "auto"        # Number of batches to run during each execution of the training loop (can be set to "auto")
+jit_compile = false                 # Whether to enable JIT compilation for the model (can improve performance on some hardware)
+
+# Settings used for Keras callbacks, which are functions that can be applied at certain stages of the training process
+[callbacks]
+reduce_lr = true                        # Whether to reduce the learning rate when a metric has stopped improving (recommended for better convergence)
+reduce_lr_monitor = "val_loss"          # Metric to monitor for reducing the learning rate (e.g., "val_loss", "val_mean_squared_error")
+reduce_lr_factor = 0.5                  # Factor by which the learning rate will be reduced (new_lr = lr * factor)
+reduce_lr_patience = 20                 # Number of epochs with no improvement after which learning rate will be reduced
+min_lr = 1e-6                           # Lower bound on the learning rate (prevents it from becoming too small)
+early_stopping = true                   # Whether to stop training early if a monitored metric has stopped improving (recommended for preventing overfitting)
+early_stopping_monitor = "val_loss"     # Metric to monitor for early stopping (e.g., "val_loss", "val_mean_squared_error")
+early_stopping_patience = 50            # Number of epochs with no improvement after which training will be stopped
+
+# Settings related to the device (CPU or GPU) used for training and inference
+[device]
+mode = "auto"               # Whether to use CPU, GPU, or automatically select the best available device ("cpu", "gpu", or "auto")
+benchmark_device = false    # Whether to benchmark the device performance before training (can help in selecting the best device)
+min_gpu_speedup = 1.2       # Minimum speedup factor required to use GPU over CPU (if using "auto" mode)
+
+# Settings related to the output of the training process, including where to save trained models and plots
+[output]
+model_dir = "models/"   # Directory to save trained models
+model_name = ""         # Name of the model file (if empty, a default name will be generated based on the model architecture)
+version = 1             # Version number of the model (can be used for versioning and tracking different model configurations)
+save_model = true       # Whether to save the trained model after training (recommended for later use)
+save_plots = true       # Whether to save training and validation plots (recommended for visualising model performance)
