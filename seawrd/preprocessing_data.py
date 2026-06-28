@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple, Union
+import os
 
+os.environ["KERAS_BACKEND"] = "tensorflow" 
 import keras
 import numpy as np
 import pandas as pd
@@ -201,8 +203,6 @@ class DataPreprocessor:
         """
         self._validate_inputs()
 
-        # todo: need to add R_a + R_b
-
         df = self._filter_quality(self.df)
         df = self._derive_columns(df)
 
@@ -261,7 +261,7 @@ class DataPreprocessor:
 
     # ---------- PUBLIC METHODS ----------
     def get_training_data(self,
-                          return_array: bool = False,
+                          return_array: bool = True,
         ) -> Tuple[
                 Optional[keras.layers.Normalization],
                 Union[DataFrame, np.ndarray],
@@ -274,8 +274,9 @@ class DataPreprocessor:
 
         Parameters
         ----------
-        return_array : bool, default=False
-            If True, return NumPy arrays instead of DataFrames/Series.
+        return_array : bool, default=True
+            If True, return NumPy arrays instead of DataFrames/Series. These arrays will be of type float32, suitable
+            for Keras models.
 
         Returns
         -------

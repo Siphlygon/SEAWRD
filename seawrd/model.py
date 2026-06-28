@@ -4,10 +4,11 @@ import pickle
 import re
 from pathlib import Path
 from typing import Any
+import os
+os.environ["KERAS_BACKEND"] = "tensorflow" 
 
 import keras
 import numpy as np
-
 
 class DNNManager:
     """
@@ -114,6 +115,43 @@ class DNNManager:
         temp_manager = cls(model=keras.Sequential(), history=None, version=0, model_name=model_name)
         model, history, version = temp_manager.get_model_version(model_dir, model_name, version)
         return cls(model=model, history=history, version=version, model_name=model_name)
+
+
+    # ---------- UTILITY FUNCTIONS ----------
+    def _copy_normalisation_weights(self,
+                                    source_model : keras.Sequential,
+                                    target_model : keras.Sequential):
+        """
+        Copies the weights of normalisation layers from the source model to the target model. This is useful when
+        cloning a model to ensure that the normalisation layers in the new model have the same weights as those in the
+        original model.
+
+        Parameters
+        ----------
+        source_model : keras.Sequential
+            The original Keras Sequential model from which to copy the normalisation weights.
+        target_model : keras.Sequential
+            The target Keras Sequential model to which the normalisation weights will be copied.
+        """
+        for source_layer, target_layer in zip(source_model.layers, target_model.layers):
+            if isinstance(source_layer, keras.layers.Normalization):
+                target_layer.set_weights(source_layer.get_weights())
+    
+    def clone_model(self) -> keras.Sequential:
+        """
+        Creates a clone of the current model with the same architecture and normalisation weights. This is useful for
+        creating a new instance of the model for further training or evaluation without affecting the original model.
+
+        Returns
+        -------
+        keras.Sequential
+            A new Keras Sequential model that is a clone of the current model.
+        """
+        # Clone the model and copy normalisation weights
+        model = keras.models.clone_model(self.model)
+        self._copy_normalisation_weights(self.model, model)
+        
+        return model
 
 
     # ---------- MODEL INFORMATION ----------

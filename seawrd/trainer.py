@@ -1,3 +1,6 @@
+import os
+
+os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
 import numpy as np
 import pandas as pd
@@ -71,8 +74,10 @@ class DNNTrainer:
         self.learning_rate = learning_rate
         self.num_epochs = num_epochs
 
-        # Initialize the callbacks for training
-        self.callbacks = self._generate_callbacks()
+        # Initialise variables to keep track of the best model and its performance
+        self.best_model = None
+        self.best_history = None
+        self.best_val = np.inf
 
     def _generate_callbacks(self,
                            monitor : str = 'val_loss',
@@ -92,11 +97,11 @@ class DNNTrainer:
         lr_factor : float, optional
             The factor by which the learning rate will be reduced, by default 0.5.
         lr_patience : int, optional
-            The number of epochs with no improvement after which learning rate will be reduced, by default 20
+            The number of epochs with no improvement after which learning rate will be reduced, by default 15
         min_lr : float, optional
-            The lower bound on the learning rate, by default 1e-6.
+            The lower bound on the learning rate, by default 1e-7.
         early_stopping_patience : int, optional
-            The number of epochs with no improvement after which training will be stopped, by default 50.
+            The number of epochs with no improvement after which training will be stopped, by default 30.
         verbose : int, optional
             The verbosity mode, by default 1, meaning that messages will be printed when reducing learning rate or
             stopping early.
@@ -125,17 +130,20 @@ class DNNTrainer:
         return callbacks
 
     def _evaluate_model(self,
-                           test_features: pd.DataFrame,
-                           test_labels: pd.Series):
+                        model: keras.Model,
+                        test_features: np.ndarray | pd.DataFrame,
+                        test_labels: np.ndarray | pd.Series):
         """
-        Evaluate the model's performance on the provided test dataset. This method computes the predictions of the model
+        Evaluate a model's performance on the provided test dataset. This method computes the predictions of the model
         on the test features and calculates the error by comparing the predictions with the actual test labels.
 
         Parameters
         ----------
-        test_features : pd.DataFrame
+        model : keras.Model
+            The model to be evaluated.
+        test_features : np.ndarray | pd.DataFrame
             The features of the test dataset on which the model will be evaluated.
-        test_labels : pd.Series
+        test_labels : np.ndarray | pd.Series
             The labels of the test dataset against which the model will be evaluated.
 
         Returns
@@ -144,10 +152,36 @@ class DNNTrainer:
             The error between the actual test labels and the model's predictions. This is calculated as the difference
             between the actual values and the predicted values.
         """
-        predictions = self.model.predict(test_features)
-        actual_values = test_labels.to_numpy()
+        if isinstance(test_features, pd.DataFrame):
+            test_features = test_features.to_numpy()
+        if isinstance(test_labels, pd.Series):
+            test_labels = test_labels.to_numpy()
+
+        predictions = model.predict(test_features).reshape(-1)
+        actual_values = test_labels.reshape(-1)
         error = actual_values - predictions
         return error
+
+    def _round_to_n_sig_figs(self, x: float, n: int) -> float:
+        """
+        Round a number to a specified number of significant figures.
+
+        Parameters
+        ----------
+        x : float
+            The number to be rounded.
+        n : int
+            The number of significant figures to round to.
+
+        Returns
+        -------
+        float
+            The number rounded to the specified number of significant figures.
+        """
+        if x == 0:
+            return 0.0
+        else:
+            return round(x, -int(np.floor(np.log10(abs(x)))) + (n - 1))
 
     def print_architecture_performance(self):
         """
@@ -159,21 +193,26 @@ class DNNTrainer:
 
         print(f"name:           {self.model.name}")
         print(f"num_param:      {self.model.count_params()}")
-        print(f"loss_min:       {np.min(self.losses)}")
-        print(f"loss_max:       {np.max(self.losses)}")
-        print(f"loss_mean:      {np.mean(self.losses)}")
-        print(f"loss_stdev:     {np.std(self.losses)}")
-        print(f"val_loss_min:   {np.min(self.val_losses)}")
-        print(f"val_loss_max:   {np.max(self.val_losses)}")
-        print(f"val_loss_mean:  {np.mean(self.val_losses)}")
-        print(f"val_loss_stdev: {np.std(self.val_losses)}")
+        print(f"num_epoch_mean: {self._round_to_n_sig_figs(np.mean(self.list_num_epoch), 5)}")
+        print(f"loss_min:       {self._round_to_n_sig_figs(np.min(self.losses), 5)}")
+        print(f"loss_max:       {self._round_to_n_sig_figs(np.max(self.losses), 5)}")
+        print(f"loss_mean:      {self._round_to_n_sig_figs(np.mean(self.losses), 5)}")
+        print(f"loss_stdev:     {self._round_to_n_sig_figs(np.std(self.losses), 5)}")
+        print(f"val_loss_min:   {self._round_to_n_sig_figs(np.min(self.val_losses), 5)}")
+        print(f"val_loss_max:   {self._round_to_n_sig_figs(np.max(self.val_losses), 5)}")
+        print(f"val_loss_mean:  {self._round_to_n_sig_figs(np.mean(self.val_losses), 5)}")
+        print(f"val_loss_stdev: {self._round_to_n_sig_figs(np.std(self.val_losses), 5)}")
 
-    def print_loss_curve(self, log_y : bool = True, log_x : bool = True):
+    def plot_loss_curve(self,
+                        log_y : bool = True,
+                        log_x : bool = True,
+                        max_y : float = None):
         """
-        Print the loss curve of the best model after training. This method plots the training and validation losses
-        over the epochs, providing a visual representation of the model's learning process. The loss curve can help in
-        diagnosing issues such as overfitting or underfitting and in understanding how well the model has learned from
-        the training data.
+        Plot the loss curve of the best model after training.
+        
+        This method plots the training and validation losses over the epochs, providing a visual representation of the
+        model's learning process. The loss curve can help in diagnosing issues such as overfitting or underfitting and
+        in understanding how well the model has learned from the training data.
         
         Parameters
         ----------
@@ -183,6 +222,9 @@ class DNNTrainer:
         log_x : bool, optional
             Whether to use a logarithmic scale for the x-axis (epoch values), by default True. This can be useful for
             visualizing training progress over many epochs.
+        max_y : float, optional
+            The maximum value for the y-axis (loss values), by default None. This can be useful for setting a fixed
+            upper limit for the y-axis.
         """
         assert hasattr(self, 'best_history'), "The model has not been trained yet. Please train the model before printing the loss curve."
 
@@ -197,20 +239,23 @@ class DNNTrainer:
         if log_y:
             plt.yscale("log")
         plt.grid()
+        # ignore first 100 epochs for y-axis limit
+        # plt.ylim(ymax=max(max(self.best_history.history["loss"][100:]), max(self.best_history.history["val_loss"][100:])))
+        if max_y is not None:
+            plt.ylim(ymax=max_y)
 
         plt.savefig(self.model.name+"_plot_loss.png", dpi=300)
         plt.show()
         plt.close()
 
 
-
     # ---------- MAIN TRAINING LOOP ----------
     def _train_single_model(self,
                            model : keras.Model,
-                           seed : int,
-                           callbacks : list[keras.callbacks.Callback],
-                           input_features : pd.DataFrame,
-                           input_labels : pd.Series) -> keras.callbacks.History:
+                           train_features : pd.DataFrame,
+                           train_labels : pd.Series,
+                           val_features : pd.DataFrame,
+                           val_labels : pd.Series) -> keras.callbacks.History:
         """
         Train the provided model using the specified random seed for reproducibility. The training process involves
         compiling the model, fitting it to the training data, and applying callbacks for learning rate adjustment and
@@ -220,38 +265,34 @@ class DNNTrainer:
         ----------
         model : keras.Model
             The Keras model to be trained.
-        seed : int
-            The random seed for reproducibility.
-        callbacks : list[keras.callbacks.Callback]
-            A list of Keras callbacks to be applied during training, such as learning rate adjustment and early
-            stopping.
-        input_features : pd.DataFrame
-            The features of the input dataset, which will be split into training and validation sets based on the
-            validation_split parameter.
-        input_labels : pd.Series
-            The labels of the input dataset, which will be split into training and validation sets based on the
-            validation_split parameter.
+        train_features : pd.DataFrame
+            The features of the training dataset.
+        train_labels : pd.Series
+            The labels of the training dataset.
+        val_features : pd.DataFrame
+            The features of the validation dataset.
+        val_labels : pd.Series
+            The labels of the validation dataset.
 
         Returns
         -------
         keras.callbacks.History
             The training history of the model.
         """
-        # Set random seed for reproducibility and clear previous Keras session
-        keras.utils.set_random_seed(seed)
-        keras.backend.clear_session()
-
+        # Generate callbacks for training
+        callbacks = self._generate_callbacks()
+        
         # Compile and fit the model
         model.compile(loss="mean_squared_error",
                       optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
                       metrics=["mean_squared_error"])
 
         history = model.fit(
-            input_features,
-            input_labels,
+            train_features,
+            train_labels,
             batch_size=self.batch_size,
             epochs=self.num_epochs,
-            validation_split=self.validation_split,
+            validation_data=(val_features, val_labels),
             callbacks=callbacks,
             verbose=0,
             shuffle=True)
@@ -282,22 +323,34 @@ class DNNTrainer:
         num_models : int, optional
             The number of models to train, by default 10
         """
-        self.best_model = None
-        self.best_history = None
-        self.best_val = np.inf
+        # First create the validation set
+        n_val = int(len(input_features) * self.validation_split)
 
+        x_train, x_val = input_features[:-n_val], input_features[-n_val:]
+        y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
+
+        # Initialize arrays to store statistics about each model
         rp_means = np.zeros(num_models)
         rp_stds = np.zeros(num_models)
         losses = np.zeros(num_models)
         val_losses = np.zeros(num_models)
+        list_num_epoch = np.zeros(num_models)
 
         for seed in range(num_models):
             print(f"Training model {seed}/{num_models}:")
-            history = self._train_single_model(model=self.model,
-                                               seed=seed,
-                                               callbacks=self.callbacks,
-                                               input_features=input_features,
-                                               input_labels=input_labels)
+            
+            # Clear the Keras session to free up resources and avoid clutter from old models and layers
+            keras.backend.clear_session()
+
+            # Create a new model for each seed to ensure different initializations
+            keras.utils.set_random_seed(seed)
+            new_model = self.model_manager.clone_model()
+
+            history = self._train_single_model(model=new_model,
+                                               train_features=x_train,
+                                               train_labels=y_train,
+                                               val_features=x_val,
+                                               val_labels=y_val)
 
             # records the best
             val_min = min(history.history['val_loss'])
@@ -305,15 +358,16 @@ class DNNTrainer:
             print(f"Final val_loss of model {seed}/{num_models}: {val_min}")
             if val_min < self.best_val:
                 self.best_val = val_min
-                self.best_model = self.model
+                self.best_model = new_model
                 self.best_history = history
 
             # records statistics about each model
-            rp_error = self._evaluate_model(test_features=test_features,
+            rp_error = self._evaluate_model(model=new_model,
+                                            test_features=test_features,
                                             test_labels=test_labels)
             rp_means[seed] = np.mean(rp_error)
             rp_stds[seed] = np.std(rp_error)
-            # list_num_epoch[seed] = float(len(history.history['loss']))
+            list_num_epoch[seed] = float(len(history.history['loss']))
             val_losses[seed] = val_min
             losses[seed] = loss_min
 
@@ -327,7 +381,7 @@ class DNNTrainer:
         # saves the statistics about all models
         self.losses = losses
         self.val_losses = val_losses
-
+        self.list_num_epoch = list_num_epoch
         return rp_means, rp_stds, losses, val_losses
 
 
