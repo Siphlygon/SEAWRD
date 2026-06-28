@@ -4,6 +4,7 @@
 
 # Settings related to the neural network model architecture
 [model]
+model_name = ""         # Name of the model file (if empty, a default name will be generated based on the model architecture)
 num_layers = 4              # Number of hidden layers in the neural network
 num_neurons = 8             # Number of neurons in each hidden layer
 num_outputs = 1             # Number of output neurons (for estimating planetary radius, this is typically 1)
@@ -47,7 +48,6 @@ min_gpu_speedup = 1.2       # Minimum speedup factor required to use GPU over CP
 # Settings related to the output of the training process, including where to save trained models and plots
 [output]
 model_dir = "models/"   # Directory to save trained models
-model_name = ""         # Name of the model file (if empty, a default name will be generated based on the model architecture)
 version = 1             # Version number of the model (can be used for versioning and tracking different model configurations)
 save_model = true       # Whether to save the trained model after training (recommended for later use)
 save_plots = true       # Whether to save training and validation plots (recommended for visualising model performance)

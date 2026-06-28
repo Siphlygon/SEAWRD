@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import os
 import pickle
 import re
 from pathlib import Path
 from typing import Any
-import os
+
 os.environ["KERAS_BACKEND"] = "tensorflow" 
 
 import keras
 import numpy as np
+
 
 class DNNManager:
     """
@@ -40,54 +42,74 @@ class DNNManager:
         self.version = version
         self.model_name = model_name
 
+
     @classmethod
-    def from_new_model(cls,
-                       num_layers : int,
-                       num_neurons : int,
-                       input_shape : tuple[int, ...],
-                       normaliser : keras.layers.Normalization,
-                       num_outputs : int) -> DNNManager:
+    def from_config(cls,
+                    model_config: dict,
+                    input_shape: tuple[int, ...],
+                    normaliser: keras.layers.Normalization | None = None,) -> "DNNManager":
         """
-        Generates a Keras Sequential model, using an input layer, normalisation, num_layers hidden dense layers of
-        num_neurons each, and an output layer specified by labels_cols, and creates a DNNManager instance with the
-        generated model, an empty history, and version 0.
+        Generates a Keras Sequential model based on the provided configuration and creates a DNNManager instance with
+        the generated model, an empty history, and version 0.
 
         Parameters
         ----------
-        num_layers : int
-            The number of hidden layers in the neural network.
-        num_neurons : int
-            The number of neurons in each hidden layer.
+        model_config : dict
+            Configuration dictionary containing model parameters such as number of layers, number of neurons, input
+            shape, number of outputs, etc.
         input_shape : tuple[int, ...]
             The shape of the input features.
-        normaliser : keras.layers.Normalization
-            The normalisation layer to be applied to the input features.
-        num_outputs : int
-            The number of outputs for the output layer.
+        normaliser : keras.layers.Normalization | None, optional
+            The normalisation layer to be applied to the input features, by default None
 
         Returns
         -------
         DNNManager
-            The DNNManager instance with the generated model, an empty history, and version.
+            The DNNManager instance with the generated model, an empty history, and version 0.
+
+        Raises
+        ------
+        ValueError
+            If normalisation is to be used but the normaliser is not provided.
         """
-        # Creates a new model
+        # Check if normalisation is to be used and if the normaliser is provided
+        if model_config.get("use_normalisation", True):
+            if normaliser is None:
+                raise ValueError("normaliser must be provided when model.use_normalisation=true")
+            normalisation_layer = normaliser
+        else:
+            normalisation_layer = None
+
         model = keras.Sequential()
 
-        # Add an input layer for features
+        # Add the input layer with the specified input shape
         model.add(keras.Input(shape=input_shape))
-        model.add(normaliser)
 
-        # Add hidden layers
-        for _ in range(num_layers):
-            model.add(keras.layers.Dense(num_neurons, activation='relu'))
+        if normalisation_layer is not None:
+            model.add(normalisation_layer)
 
-        # Add output layer
-        model.add(keras.layers.Dense(num_outputs))
+        for _ in range(int(model_config["num_layers"])):
+            model.add(keras.layers.Dense(
+                    int(model_config["num_neurons"]),
+                    activation=model_config.get("activation", "relu"),
+                )
+            )
 
-        # Generate a model name based on the architecture
-        model_name = f"R({num_layers}x{num_neurons}_{input_shape[0]}i_{num_outputs}o)"
+        # Add the output layer with the specified number of outputs
+        model.add(keras.layers.Dense(int(model_config["num_outputs"])))
 
-        return cls(model=model, history=None, version=0, model_name=model_name)
+        if model_config.get("model_name"):
+            model_name = model_config["model_name"]
+        else:
+            temp_manager = cls(model=model, history=None, version=0, model_name="")
+            model_name = temp_manager.create_model_name()
+
+        return cls(
+            model=model,
+            history=None,
+            version=0,
+            model_name=model_name,
+        )
 
     @classmethod
     def from_previous_model(cls,
@@ -136,7 +158,7 @@ class DNNManager:
         for source_layer, target_layer in zip(source_model.layers, target_model.layers):
             if isinstance(source_layer, keras.layers.Normalization):
                 target_layer.set_weights(source_layer.get_weights())
-    
+
     def clone_model(self) -> keras.Sequential:
         """
         Creates a clone of the current model with the same architecture and normalisation weights. This is useful for
@@ -387,16 +409,19 @@ if __name__ == "__main__":
     # Decide the outputs
     label_cols = ["R_p"]
 
-    # Generate and compile the model
-    dnn_manager = DNNManager.from_new_model(num_layers=4,
-                                            num_neurons=8,
-                                            input_shape=train_features.shape[1:],
-                                            normaliser=normaliser,
-                                            num_outputs=len(label_cols))
-    dnn_model = dnn_manager.model
+    # Create a dummy config (load it from TOML normally)
+    config = {
+        "num_layers": 4,
+        "num_neurons": 8,
+        "activation": "relu",
+        "use_normalisation": True,
+        "num_outputs": len(label_cols),
+    }
 
-    # Input data needs to be a proper Keras input tensor for this to work, will wait on data processsing pipeline
-    # dnn_model.compile(loss='mean_absolute_error',
-    #                     optimizer=keras.optimizers.Adam(learning_rate=5e-3),
-    #                     metrics=['mean_absolute_error'])
-    # dnn_model.fit(train_features, label_cols)
+    # Generate and compile the model
+    dnn_manager = DNNManager.from_config(
+        model_config=config,
+        input_shape=train_features.shape[1:],
+        normaliser=normaliser
+    )
+    dnn_model = dnn_manager.model
