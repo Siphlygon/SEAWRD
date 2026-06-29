@@ -7,10 +7,15 @@ name = "seawrd"
 version = "0.4.0"
 dependencies = [
     "keras",
+    "tensorflow",
     "tensorflow_docs",
     "numpy",
     "pandas",
-    "tomli"
+    "tomli",
+    "matplotlib",
+    "pytest",
+    "pytest-cov",
+    "ipykernel"
 ]
 authors = [
   {name = "Ashley Parr", email = "amparr83@gmail.com"},
