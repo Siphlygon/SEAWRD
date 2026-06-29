@@ -25,7 +25,7 @@ loss = "mean_squared_error"         # Loss function to be used during training (
 optimiser = "adam"                  # Optimiser to be used during training (e.g., "adam", "sgd") -- ONLY "adam" IS CURRENTLY SUPPORTED
 learning_rate = 5e-3                # Learning rate for the optimiser (controls the step size during gradient descent)
 metrics = ["mean_squared_error"]    # List of metrics to be evaluated during training and validation (e.g., ["mean_squared_error", "mean_absolute_error"])
-steps_per_execution = "auto"        # Number of batches to run during each execution of the training loop (can be set to "auto")
+steps_per_execution = 1             # Number of batches to run during each execution of the training loop
 jit_compile = false                 # Whether to enable JIT compilation for the model (can improve performance on some hardware)
 
 # Settings used for Keras callbacks, which are functions that can be applied at certain stages of the training process

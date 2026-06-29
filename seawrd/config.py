@@ -179,7 +179,7 @@ class CompileConfig(ConfigSection):
     optimiser: Literal["adam"] = "adam"
     learning_rate: float = 0.005
     metrics: tuple[str, ...] = ("mean_squared_error",)
-    steps_per_execution: int | str = "auto"
+    steps_per_execution: int = 1
     jit_compile: str | bool = "auto"
 
     @classmethod
@@ -214,8 +214,8 @@ class CompileConfig(ConfigSection):
             raise NotImplementedError("Only optimiser='adam' is currently supported.")
 
         # Check if steps_per_execution is either "auto" or a positive integer
-        if not (self.steps_per_execution == "auto" or (isinstance(self.steps_per_execution, int) and self.steps_per_execution > 0)):
-            raise ValueError("compile.steps_per_execution must be 'auto' or a positive integer")
+        if self.steps_per_execution <= 0:
+            raise ValueError("compile.steps_per_execution must be a positive integer")
 
         # Check if jit_compile is either "auto" or a boolean
         if not (self.jit_compile == "auto" or isinstance(self.jit_compile, bool)):

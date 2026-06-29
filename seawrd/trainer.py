@@ -241,33 +241,6 @@ class DNNTrainer:
         error = actual_values - predictions
         return error
 
-    def _compile_from_config(self, model : keras.Sequential) -> None:
-        """
-        Compiles the current model using the instance's CompileConfig. This allows for dynamic compilation of the model
-        with different loss functions, optimisers, and metrics.
-
-        Parameters
-        ----------
-        model : keras.Sequential
-            The Keras model to be compiled.
-        """
-        optimiser_name = self.compile_config.optimiser
-
-        if optimiser_name == "adam":
-            optimiser = keras.optimizers.Adam(
-                learning_rate=self.compile_config.learning_rate
-            )
-        else:
-            raise NotImplementedError(f"Unsupported optimiser: {optimiser_name}")
-
-        model.compile(
-            loss=self.compile_config.loss,
-            optimizer=optimiser,
-            metrics=list(self.compile_config.metrics),
-            steps_per_execution=self.compile_config.steps_per_execution,
-            jit_compile=self.compile_config.jit_compile  # type: ignore
-        )
-
     def _train_single_model(self,
                            model : keras.Model,
                            train_features : pd.DataFrame,
@@ -311,7 +284,7 @@ class DNNTrainer:
         )
 
         # Compile and fit the model
-        self._compile_from_config(model=model)
+        DNNManager._compile_from_config(model=model, compile_config=self.compile_config)
 
         history = model.fit(
             train_features,

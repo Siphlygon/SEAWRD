@@ -18,7 +18,6 @@ class DNNManager:
     """
     A class to manage the creation, saving, and loading of a Deep Neural Network (DNN) model using Keras.
     """
-
     def __init__(self,
                  model : keras.Sequential,
                  history : dict | None,
@@ -176,6 +175,34 @@ class DNNManager:
         self._copy_normalisation_weights(self.model, model)
 
         return model
+
+    @staticmethod
+    def _compile_from_config(model : keras.Sequential, compile_config : CompileConfig) -> None:
+        """
+        Compiles the current model using the instance's CompileConfig. This allows for dynamic compilation of the model
+        with different loss functions, optimisers, and metrics.
+
+        Parameters
+        ----------
+        model : keras.Sequential
+            The Keras model to be compiled.
+        """
+        optimiser_name = compile_config.optimiser
+
+        if optimiser_name == "adam":
+            optimiser = keras.optimizers.Adam(
+                learning_rate=compile_config.learning_rate
+            )
+        else:
+            raise NotImplementedError(f"Unsupported optimiser: {optimiser_name}")
+
+        model.compile(
+            loss=compile_config.loss,
+            optimizer=optimiser,
+            metrics=list(compile_config.metrics),
+            steps_per_execution=compile_config.steps_per_execution, # type: ignore
+            jit_compile=compile_config.jit_compile  # type: ignore
+        )
 
 
     # ---------- MODEL INFORMATION ----------
