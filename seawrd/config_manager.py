@@ -70,14 +70,7 @@ class ConfigManager:
         SEAWRDConfig
             An instance of the SEAWRDConfig dataclass initialized with the provided configuration.
         """
-        return SEAWRDConfig(
-            model=ModelConfig(**raw.get("model", {})),
-            training=TrainingConfig(**raw.get("training", {})),
-            compile=CompileConfig(**raw.get("compile", {})),
-            callbacks=CallbackConfig(**raw.get("callbacks", {})),
-            device=DeviceConfig(**raw.get("device", {})),
-            output=OutputConfig(**raw.get("output", {})),
-        )
+        return SEAWRDConfig.from_dict(raw)
 
 
     def to_dict(self) -> dict[str, Any]:

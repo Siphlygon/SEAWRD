@@ -89,3 +89,22 @@ def test_with_overrides_applies_multiple_changes():
     assert manager.config.model.num_layers == 4
     assert updated.config.training.batch_size == 64
     assert updated.config.model.num_layers == 3
+
+
+def test_config_manager_rejects_unknown_toml_section(tmp_path: Path):
+    """
+    Test that ConfigManager raises ValueError when an unknown section is present in the TOML configuration file.
+    
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        The path to the temporary directory where the TOML file will be created.
+    """
+    path = tmp_path / "config.toml"
+    path.write_text("""
+        [not_a_real_section]
+        thing = 1
+        """
+    )
+    with pytest.raises(ValueError, match="Unknown config sections"):
+        ConfigManager.from_toml(path)
