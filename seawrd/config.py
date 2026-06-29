@@ -247,9 +247,14 @@ class CallbackConfig(ConfigSection):
     early_stopping: bool = True
     early_stopping_monitor: str = "val_loss"
     early_stopping_patience: int = 50
-    restore_best_weights: bool = True
 
     def __post_init__(self):
+        # Check boolean fields for reduce_lr and early_stopping
+        if not isinstance(self.reduce_lr, bool):
+            raise ValueError("callbacks.reduce_lr must be a boolean value")
+        if not isinstance(self.early_stopping, bool):
+            raise ValueError("callbacks.early_stopping must be a boolean value")
+        
         # Only validate these parameters if the corresponding callbacks are enabled
         # note - not checking for correct metrics here is intentional, see SEAWRDConfig.__post_init__ for why
         if self.reduce_lr:
@@ -258,6 +263,9 @@ class CallbackConfig(ConfigSection):
 
             if self.reduce_lr_patience < 0:
                 raise ValueError("callbacks.reduce_lr_patience must be >= 0")
+            
+            if self.min_lr < 0:
+                raise ValueError("callbacks.min_lr must be >= 0")
 
         if self.early_stopping:
             if self.early_stopping_patience < 0:
