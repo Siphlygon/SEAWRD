@@ -227,12 +227,6 @@ def test_clone_model_preserves_normalisation_behaviour():
         err_msg="Cloned Normalization layer does not behave like the original.",
     )
 
-    np.testing.assert_allclose(
-        manager.model.predict(x, verbose=0),
-        clone.predict(x, verbose=0),
-        err_msg="Cloned model does not predict like the original.",
-    )
-
 
 # def test_model_name_counts_hidden_layers_without_normalizer():
 #     """

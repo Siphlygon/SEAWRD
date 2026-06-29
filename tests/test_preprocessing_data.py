@@ -248,6 +248,7 @@ def test_get_training_data_with_different_random_states(planet_df : pd.DataFrame
     assert not np.array_equal(x_test1, x_test2)
 
 
+@pytest.mark.tf
 def test_correct_tf_dataset_creation(planet_df : pd.DataFrame):
     """
     Test that the data preprocessor creates TensorFlow datasets correctly.
