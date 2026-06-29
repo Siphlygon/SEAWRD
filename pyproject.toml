@@ -35,3 +35,16 @@ namespaces = false
 [tool.setuptools.package-data]
 seawrd = ["*.toml", "*.dat"]
 
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "slow: tests that train or save/load real TensorFlow models",
+  "tf: tests requiring TensorFlow/Keras execution",
+]
