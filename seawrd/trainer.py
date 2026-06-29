@@ -2,14 +2,14 @@ import os
 
 os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow_docs.modeling
-import matplotlib.pyplot as plt
 
-from .model import DNNManager
 from .config import SEAWRDConfig
 from .config_manager import ConfigManager
+from .model import DNNManager
 
 
 class DNNTrainer:
@@ -52,15 +52,19 @@ class DNNTrainer:
         self.best_model = keras.Sequential()
         self.best_history = keras.callbacks.History()
         self.best_val = np.inf
+        self.losses : np.ndarray = np.array([])
+        self.val_losses : np.ndarray = np.array([])
+        self.list_num_epoch : np.ndarray = np.array([])
+        self._trained = False
 
 
-    def _round_to_n_sig_figs(self, x: float, n: int) -> float:
+    def _round_to_n_sig_figs(self, x: float | np.floating, n: int) -> float:
         """
         Round a number to a specified number of significant figures.
 
         Parameters
         ----------
-        x : float
+        x : float | np.floating
             The number to be rounded.
         n : int
             The number of significant figures to round to.
@@ -72,8 +76,7 @@ class DNNTrainer:
         """
         if x == 0:
             return 0.0
-        else:
-            return round(x, -int(np.floor(np.log10(abs(x)))) + (n - 1))
+        return float(round(x, -int(np.floor(np.log10(abs(x)))) + (n - 1)))
 
     def print_architecture_performance(self):
         """
@@ -81,7 +84,8 @@ class DNNTrainer:
         and statistics about the training and validation losses. This method provides a quick overview of the model's
         performance after training, allowing for easy comparison between different model architectures or training runs.
         """
-        assert hasattr(self, 'losses'), "The model has not been trained yet. Please train the model before printing performance metrics."
+        assert self._trained, (
+            "The model has not been trained yet. Please train the model before printing performance metrics.")
 
         print(f"name:           {self.best_model.name}")
         print(f"num_param:      {self.best_model.count_params()}")
@@ -98,7 +102,7 @@ class DNNTrainer:
     def plot_loss_curve(self,
                         log_y : bool = True,
                         log_x : bool = True,
-                        max_y : float = None):
+                        max_y : float | None = None):
         """
         Plot the loss curve of the best model after training.
         
@@ -118,7 +122,8 @@ class DNNTrainer:
             The maximum value for the y-axis (loss values), by default None. This can be useful for setting a fixed
             upper limit for the y-axis.
         """
-        assert hasattr(self, 'best_history'), "The model has not been trained yet. Please train the model before printing the loss curve."
+        assert self._trained, (
+            "The model has not been trained yet. Please train the model before printing the loss curve.")
 
         plt.plot(self.best_history.history["loss"], label="training set", alpha=0.5, color="indigo")
         plt.plot(self.best_history.history["val_loss"], label="validation set", alpha=0.5, color="seagreen")
@@ -132,7 +137,8 @@ class DNNTrainer:
             plt.yscale("log")
         plt.grid()
         # ignore first 100 epochs for y-axis limit
-        # plt.ylim(ymax=max(max(self.best_history.history["loss"][100:]), max(self.best_history.history["val_loss"][100:])))
+        # plt.ylim(ymax=max(max(self.best_history.history["loss"][100:]),
+        #   max(self.best_history.history["val_loss"][100:])))
         if max_y is not None:
             plt.ylim(ymax=max_y)
 
@@ -190,7 +196,7 @@ class DNNTrainer:
                 keras.callbacks.ReduceLROnPlateau( # reduce Learning Rate if the model does not improve
                     monitor=lr_monitor, # the metric to monitor for improvement
                     factor=lr_factor, # the factor by which the learning rate will be reduced. new_lr = lr * factor
-                    patience=lr_patience, # number of epochs with no improvement after which learning rate will be reduced
+                    patience=lr_patience, # number of epochs with no improvement after which lr will be reduced
                     min_lr=min_lr, # lower bound on the learning rate
                     verbose=verbose # verbosity mode, 1 = print messages when reducing learning rate
                 )
@@ -201,12 +207,12 @@ class DNNTrainer:
                 keras.callbacks.EarlyStopping( # stop the training if the model does not improve
                     monitor=early_stopping_monitor,
                     patience=early_stopping_patience,
-                    restore_best_weights=True, # restore model weights from the epoch with the best value of the monitored quantity
+                    restore_best_weights=True, # restore model weights from the epoch with the best value of the monitor
                     verbose=verbose
                 )
             ]
 
-        return callbacks
+        return callbacks # type: ignore
 
     def _evaluate_model(self,
                         model: keras.Model,
@@ -284,7 +290,7 @@ class DNNTrainer:
         )
 
         # Compile and fit the model
-        DNNManager._compile_from_config(model=model, compile_config=self.compile_config)
+        DNNManager.compile_from_config(model=model, compile_config=self.compile_config)
 
         history = model.fit(
             train_features,
@@ -293,7 +299,7 @@ class DNNTrainer:
             epochs=self.training_config.num_epochs,
             validation_data=(val_features, val_labels),
             callbacks=callbacks,
-            verbose=0,
+            verbose=0,  # type: ignore
             shuffle=self.training_config.shuffle,)
 
         return history
@@ -304,7 +310,7 @@ class DNNTrainer:
                      test_features: pd.DataFrame,
                      test_labels: pd.Series):
         """
-        Train multiple models with different random initializations and keep the best one based on validation loss. This
+        Train multiple models with different random initialisations and keep the best one based on validation loss. This
         method also collects statistics about each model's performance.
 
         Parameters
@@ -327,15 +333,15 @@ class DNNTrainer:
 
         # Initialize arrays to store statistics about each model
         num_models = self.training_config.num_models
-        rp_means = np.zeros(num_models)
-        rp_stds = np.zeros(num_models)
+        pred_means = np.zeros(num_models)
+        pred_stds = np.zeros(num_models)
         losses = np.zeros(num_models)
         val_losses = np.zeros(num_models)
         list_num_epoch = np.zeros(num_models)
 
         for seed in range(num_models):
             print(f"Training model {seed}/{num_models}:")
-            
+
             # Clear the Keras session to free up resources and avoid clutter from old models and layers
             keras.backend.clear_session()
 
@@ -359,11 +365,11 @@ class DNNTrainer:
                 self.best_history = history
 
             # records statistics about each model
-            rp_error = self._evaluate_model(model=new_model,
+            pred_error = self._evaluate_model(model=new_model,
                                             test_features=test_features,
                                             test_labels=test_labels)
-            rp_means[seed] = np.mean(rp_error)
-            rp_stds[seed] = np.std(rp_error)
+            pred_means[seed] = np.mean(pred_error)
+            pred_stds[seed] = np.std(pred_error)
             list_num_epoch[seed] = float(len(history.history['loss']))
             val_losses[seed] = val_min
             losses[seed] = loss_min
@@ -380,7 +386,8 @@ class DNNTrainer:
         self.losses = losses
         self.val_losses = val_losses
         self.list_num_epoch = list_num_epoch
-        return rp_means, rp_stds, losses, val_losses
+        self._trained = True
+        return pred_means, pred_stds, losses, val_losses
 
 
 if __name__ == "__main__":
@@ -391,38 +398,39 @@ if __name__ == "__main__":
     print("Generating dummy data for training...")
     NUM_SAMPLES = 800
     NUM_FEATURES = 10
-    input_features = pd.DataFrame(np.random.rand(NUM_SAMPLES, NUM_FEATURES),
+    i_features = pd.DataFrame(np.random.rand(NUM_SAMPLES, NUM_FEATURES),
                                   columns=[f"feature_{i}" for i in range(NUM_FEATURES)])
-    input_labels = pd.Series(np.random.rand(NUM_SAMPLES), name="target")
+    i_labels = pd.Series(np.random.rand(NUM_SAMPLES), name="target")
 
     TEST_SAMPLES = 200
-    test_features = pd.DataFrame(np.random.rand(TEST_SAMPLES, NUM_FEATURES),
+    t_features = pd.DataFrame(np.random.rand(TEST_SAMPLES, NUM_FEATURES),
                                  columns=[f"feature_{i}" for i in range(NUM_FEATURES)])
-    test_labels = pd.Series(np.random.rand(TEST_SAMPLES), name="target")
+    t_labels = pd.Series(np.random.rand(TEST_SAMPLES), name="target")
 
     # calibrate a normaliser
     print("Calibrating normaliser...")
     normaliser = keras.layers.Normalization(axis=-1)
-    normaliser.adapt(np.array(input_features))
+    normaliser.adapt(np.array(i_features))
 
     # it would take a fair amount of lines to create a dummy config; we'll just load the default config for now
     print("Loading default configuration...")
     cfgm = ConfigManager.from_toml("seawrd/seawrd_default.toml")
-    config = cfgm.config
+    cfg = cfgm.config
 
     # Create a DNNManager instance with the loaded configuration and the normaliser
     print("Creating DNNManager and DNNTrainer instances...")
-    dnn_manager = DNNManager.from_config(model_config=config.model,
+    dnn_manager = DNNManager.from_config(model_config=cfg.model,
                                          input_shape=(NUM_FEATURES,),
                                          normaliser=normaliser)
-    dnn_trainer = DNNTrainer(model_manager=dnn_manager, config=config)
+    dnn_trainer = DNNTrainer(model_manager=dnn_manager, config=cfg)
 
     # Train the models
     print("Training models...")
-    rp_means, rp_stds, losses, val_losses = dnn_trainer.train_models(input_features=input_features,
-                                                                    input_labels=input_labels,
-                                                                    test_features=test_features,
-                                                                    test_labels=test_labels)
+    rp_means, rp_stds, rp_losses, rp_val_losses = dnn_trainer.train_models(
+        input_features=i_features,
+        input_labels=i_labels,
+        test_features=t_features,
+        test_labels=t_labels)
 
     # Print the architecture performance of the best model
     dnn_trainer.print_architecture_performance()

@@ -32,16 +32,19 @@ class DNNManager:
         model : keras.Sequential
             The Keras Sequential model to be managed.
         history : keras.callbacks.History | None
-            The training history of the model, if available. If None, it indicates that the model has not been trained yet.
+            The training history of the model, if available. If None, it indicates that the model has not been trained
+            yet.
         version : int
             The version number of the model. This is used for saving and loading different versions of the model.
         model_name : str
             The name of the model. This is used for saving and loading the model files.
         """
         self.model = model
-        self.history = history
+        self.history : keras.callbacks.History
         if history is None:
             self.history = keras.callbacks.History()
+        else:
+            self.history = history
         self.version = version
         self.model_name = model_name
 
@@ -179,7 +182,7 @@ class DNNManager:
         return model
 
     @staticmethod
-    def _compile_from_config(model : keras.Sequential, compile_config : CompileConfig) -> None:
+    def compile_from_config(model : keras.Sequential, compile_config : CompileConfig) -> None:
         """
         Compiles the current model using the instance's CompileConfig. This allows for dynamic compilation of the model
         with different loss functions, optimisers, and metrics.
@@ -376,8 +379,12 @@ class DNNManager:
 
         Returns
         -------
-        tuple[keras.Model, keras.callbacks.History | None, int]
-            A tuple containing the loaded model, its training history (if available), and the version number.
+        keras.Model
+            The loaded Keras model.
+        keras.callbacks.History | None
+            The training history of the model, if available. If not available, returns None.
+        int
+            The version number of the loaded model.
 
         Raises
         ------
@@ -396,7 +403,7 @@ class DNNManager:
         #     raise FileNotFoundError(f"No saved model found for '{model_name}'.")
 
         paths = self._get_model_paths(model_dir, model_name, version)
-        model = keras.models.load_model(paths["model"])
+        model = keras.models.load_model(paths["model"])  # type: ignore
 
         history = None
         if paths["history"].exists():
@@ -405,7 +412,7 @@ class DNNManager:
 
         print(f"Loaded model version v{version}")
 
-        return model, history, version
+        return model, history, version  # type:ignore
 
     def load_model_version(self,
                            model_dir : Path | str,
@@ -425,7 +432,10 @@ class DNNManager:
         """
         model, history, version = self.get_model_version(model_dir, model_name, version)
         self.model = model
-        self.history = history
+        if history is None:
+            self.history = keras.callbacks.History()
+        else:
+            self.history = history
         self.version = version
 
 
@@ -434,8 +444,8 @@ if __name__ == "__main__":
     train_features = np.asarray([[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 6]], dtype=np.float32)
 
     # Initialise and adapt the normaliser with the training features
-    normaliser = keras.layers.Normalization(axis=-1)
-    normaliser.adapt(np.array(train_features))
+    normal = keras.layers.Normalization(axis=-1)
+    normal.adapt(np.array(train_features))
     print("Normaliser adapted with training features.")
 
     # Decide the outputs
@@ -456,7 +466,7 @@ if __name__ == "__main__":
     dnn_manager = DNNManager.from_config(
         model_config=config,
         input_shape=train_features.shape[1:],
-        normaliser=normaliser
+        normaliser=normal
     )
     dnn_model = dnn_manager.model
     print("Model generated from configuration.")

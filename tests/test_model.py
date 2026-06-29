@@ -1,3 +1,7 @@
+"""
+Unit tests for the DNNManager class in the seawrd.model module.
+"""
+
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +93,8 @@ def assert_same_keras_model(model_a : keras.Model,
         if exact:  # If exact comparison is required, check for exact equality
             assert np.array_equal(wa, wb), f"Weight {i} values differ"
         else:
-            np.testing.assert_allclose(wa, wb, rtol=rtol, atol=atol, err_msg=f"Weight {i} values differ beyond tolerance")
+            np.testing.assert_allclose(wa, wb, rtol=rtol, atol=atol,
+                                       err_msg=f"Weight {i} values differ beyond tolerance")
 
 
 def assert_same_history(history_a : keras.callbacks.History,
@@ -173,7 +178,7 @@ def test_compile_from_config_compiles_model():
     cfg = ModelConfig(use_normalisation=False, num_layers=1, num_neurons=4)
     manager = DNNManager.from_config(cfg, input_shape=(2,))
 
-    DNNManager._compile_from_config(
+    DNNManager.compile_from_config(
         manager.model,
         CompileConfig(learning_rate=0.001, metrics=("mean_squared_error",)),
     )
@@ -192,7 +197,8 @@ def test_latest_version_returns_zero_when_no_models(tmp_path : Path):
     """
     manager = DNNManager(model=keras.Sequential(), history=None, version=0, model_name="demo1")
 
-    assert manager.get_latest_version(tmp_path, "demo1") == 0, "Expected latest version to be 0 when no models are present"
+    assert manager.get_latest_version(tmp_path, "demo1") == 0, (
+        "Expected latest version to be 0 when no models are present")
 
 
 def test_latest_version_returns_highest_version(tmp_path : Path):
@@ -212,7 +218,8 @@ def test_latest_version_returns_highest_version(tmp_path : Path):
 
     manager = DNNManager(model=keras.Sequential(), history=None, version=0, model_name="demo")
 
-    assert manager.get_latest_version(tmp_path, "demo") == 3, "Expected latest version to be 3 based on saved model files"
+    assert manager.get_latest_version(tmp_path, "demo") == 3, (
+        "Expected latest version to be 3 based on saved model files")
 
 
 def test_model_save_and_load(tmp_path : Path):
@@ -228,7 +235,7 @@ def test_model_save_and_load(tmp_path : Path):
     manager = DNNManager.from_config(cfg, input_shape=(2,))
 
     # Save the model
-    # todo: it is likely these methods will change to use config values or class members, so change tests when appropriate
+    # todo: it is likely these methods will change to use config or class members, so change tests when appropriate
     manager.save_model_version(
         model=manager.model,
         history=manager.history,
