@@ -165,6 +165,11 @@ class DNNManager:
             if isinstance(source_layer, keras.layers.Normalization):
                 target_layer.set_weights(source_layer.get_weights())
 
+                # Keras Normalization uses finalized internal state during calls. set_weights() updates the stored
+                # variables, but may not refresh the broadcast tensors used by the layer.
+                if hasattr(target_layer, "finalize_state"):
+                    target_layer.finalize_state()
+
     def clone_model(self) -> keras.Sequential:
         """
         Creates a clone of the current model with the same architecture and normalisation weights. This is useful for
