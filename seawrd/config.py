@@ -317,7 +317,7 @@ class SEAWRDConfig:
     callbacks: CallbackConfig
     device: DeviceConfig
     output: OutputConfig
-    
+
     @staticmethod
     def _validate_monitor_name(monitor: str,
                                metrics: tuple[str, ...],
@@ -423,3 +423,69 @@ class SEAWRDConfig:
             device=DeviceConfig.from_dict(raw.get("device")),
             output=OutputConfig.from_dict(raw.get("output")),
         )
+
+    def with_update(self, **updates: Any) -> "SEAWRDConfig":
+        """
+        Create a new SEAWRDConfig instance with updated sections.
+
+        Parameters
+        ----------
+        **updates : Any
+            Keyword arguments representing the sections to update and their new values.
+        
+        Returns
+        -------
+        SEAWRDConfig
+            A new instance of SEAWRDConfig with the specified sections updated.
+        
+        Raises
+        ------
+        ValueError
+            If there are unknown sections in the updates that do not correspond to any of the expected configuration
+            sections.
+        """
+        valid_sections = {"model", "training", "compile", "callbacks", "device", "output"}
+        unknown_sections = set(updates) - valid_sections
+
+        if unknown_sections:
+            raise ValueError(f"Unknown config sections: {sorted(unknown_sections)}")
+
+        # Turn the updates into proper dataclass instances if they are provided as dictionaries
+        for section in valid_sections:
+            if section in updates and isinstance(updates[section], dict):
+                section_class = getattr(self, section).__class__
+                updates[section] = section_class.from_dict(updates[section])
+
+        return replace(self, **updates)
+
+
+    def with_update_section(self, section_name: str, **updates: Any) -> "SEAWRDConfig":
+        """
+        Create a new SEAWRDConfig instance with an updated section.
+
+        Parameters
+        ----------
+        section_name : str
+            The name of the section to update (e.g., 'model', 'training').
+        **updates : Any
+            Keyword arguments representing the fields to update within the specified section.
+
+        Returns
+        -------
+        SEAWRDConfig
+            A new instance of SEAWRDConfig with the specified section updated.
+
+        Raises
+        ------
+        KeyError
+            If the specified section is not found in the configuration.
+        ValueError
+            If there are unknown fields in the updates that do not correspond to any fields in the specified section.
+        """
+        if not hasattr(self, section_name):
+            raise KeyError(f"Unknown config section: {section_name}")
+
+        current_section = getattr(self, section_name)
+        updated_section = current_section.with_update(**updates)
+
+        return self.with_update(**{section_name: updated_section})

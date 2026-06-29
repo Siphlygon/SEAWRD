@@ -207,3 +207,25 @@ def test_callback_monitor_must_be_known_metric():
             "callbacks": {"early_stopping_monitor": "accuracy"},
         })
 
+
+def test_seawrd_with_update():
+    """
+    Test that the with_update method of SEAWRDConfig correctly updates the configuration.
+    """
+    cfg = SEAWRDConfig.from_dict({})
+    updated_cfg = cfg.with_update(model={"num_layers": 5}, training={"batch_size": 64})
+
+    assert updated_cfg.model.num_layers == 5
+    assert updated_cfg.training.batch_size == 64
+    assert updated_cfg.compile.metrics == cfg.compile.metrics  # Unchanged
+
+
+def test_seawrd_with_update_section():
+    """
+    Test that the with_update_section method of SEAWRDConfig correctly updates a specific section of the configuration.
+    """
+    cfg = SEAWRDConfig.from_dict({})
+    updated_cfg = cfg.with_update_section(section_name="model", **{"num_layers": 5})
+
+    assert updated_cfg.model.num_layers == 5
+    assert updated_cfg.training.batch_size == cfg.training.batch_size  # Unchanged
