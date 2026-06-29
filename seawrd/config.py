@@ -7,6 +7,38 @@ from typing_extensions import Self
 import keras
 
 
+def validate_keras_field(field_name: str, field_type: str):
+    """
+    Validate that Keras can resolve a given field identifier.
+
+    Parameters
+    ----------
+    field_name : str
+        The name of the field to validate (e.g., 'loss', 'metric', 'activation').
+    field_type : str
+        The name of the Keras module to use for validation (e.g., losses, metrics, activations).
+    
+    Raises
+    ------    
+    ValueError
+        If the field identifier or type is unknown or unsupported.
+    """
+    match field_type:
+        case "losses":
+            keras_module = keras.losses
+        case "metrics":
+            keras_module = keras.metrics
+        case "activations":
+            keras_module = keras.activations
+        case _:
+            raise ValueError(f"Unknown or unsupported Keras field type: {field_type!r}")
+
+    try:
+        keras_module.get(field_name)
+    except Exception as exc:
+        raise ValueError(f"Unknown or unsupported Keras {field_type}: {field_name!r}") from exc
+
+
 class ConfigSection:
     """
     Base helper for simple dataclass config sections, with potential for future extensions.
@@ -113,8 +145,7 @@ class ModelConfig(ConfigSection):
             raise ValueError("model.num_outputs must be > 0")
 
         # Check if the activation function exists in keras.activations
-        if not hasattr(keras.activations, self.activation):
-            raise ValueError(f"model.activation '{self.activation}' is not a valid Keras activation function.")
+        validate_keras_field(self.activation, "activations")
 
 
 @dataclass(frozen=True)
@@ -147,7 +178,7 @@ class CompileConfig(ConfigSection):
     loss: str = "mean_squared_error"
     optimiser: Literal["adam"] = "adam"
     learning_rate: float = 0.005
-    _metrics: tuple[str, ...] = ("mean_squared_error",)
+    metrics: tuple[str, ...] = ("mean_squared_error",)
     steps_per_execution: int | str = "auto"
     jit_compile: bool = False
 
@@ -162,33 +193,19 @@ class CompileConfig(ConfigSection):
             raise ValueError("compile.steps_per_execution must be 'auto' or a positive integer")
 
         # Check if the loss function exists in keras.losses
-        if not hasattr(keras.losses, self.loss):
-            raise ValueError(f"compile.loss '{self.loss}' is not a valid Keras loss function.")
+        validate_keras_field(self.loss, "losses")
 
         # Convert list from TOML into tuple, since the dataclass is frozen.
-        if isinstance(self._metrics, list):
-            object.__setattr__(self, "metrics", tuple(self._metrics))
+        if isinstance(self.metrics, list):
+            object.__setattr__(self, "metrics", tuple(self.metrics))
 
         # Check if all metrics exist in keras.metrics
-        for metric in self._metrics:
-            if not hasattr(keras.metrics, metric):
-                raise ValueError(f"compile.metrics '{metric}' is not a valid Keras metric function.")
+        for metric in self.metrics:
+            validate_keras_field(metric, "metrics")
 
         # # Check if the optimizer exists in keras.optimizers
         # if not hasattr(keras.optimizers, self.optimiser.capitalize()):
         #     raise ValueError(f"compile.optimiser '{self.optimiser}' is not a valid Keras optimizer.")
-
-    @property
-    def metrics(self) -> list[str]:
-        """
-        Return the metrics as a list. This is useful for Keras model compilation, which expects a list of metrics.
-
-        Returns
-        -------
-        list[str]
-            The metrics as a list.
-        """
-        return list(self._metrics)
 
 
 @dataclass(frozen=True)
@@ -209,11 +226,8 @@ class CallbackConfig(ConfigSection):
 
     def __post_init__(self):
         # Only validate these parameters if the corresponding callbacks are enabled
+        # note - not checking for correct metrics here is intentional, see SEAWRDConfig.__post_init__ for why
         if self.reduce_lr:
-            # Check if the monitor metric exists in keras.metrics
-            if not hasattr(keras.metrics, self.reduce_lr_monitor):
-                raise ValueError(f"callbacks.reduce_lr_monitor '{self.reduce_lr_monitor}' is not a valid Keras metric function.")
-
             if not 0 < self.reduce_lr_factor < 1:
                 raise ValueError("callbacks.reduce_lr_factor must be between 0 and 1")
 
@@ -221,10 +235,6 @@ class CallbackConfig(ConfigSection):
                 raise ValueError("callbacks.reduce_lr_patience must be >= 0")
 
         if self.early_stopping:
-            # Check if the monitor metric exists in keras.metrics
-            if not hasattr(keras.metrics, self.early_stopping_monitor):
-                raise ValueError(f"callbacks.early_stopping_monitor '{self.early_stopping_monitor}' is not a valid Keras metric function.")
-
             if self.early_stopping_patience < 0:
                 raise ValueError("callbacks.early_stopping_patience must be >= 0")
 
@@ -272,6 +282,62 @@ class SEAWRDConfig:
     callbacks: CallbackConfig
     device: DeviceConfig
     output: OutputConfig
+    
+    @staticmethod
+    def _validate_monitor_name(monitor: str,
+                               metrics: tuple[str, ...],
+                               has_validation: bool = True):
+        """
+        Validate that a monitor name is valid for callbacks based on the provided metrics.
+        
+        Note that this requires information from CompileConfig to determine which metrics are being tracked, and whether
+        validation metrics are included, and so is intended to only be ran for SEAWRDConfig instances.
+
+        Parameters
+        ----------
+        monitor : str
+            The monitor name to validate.
+        metrics : tuple[str, ...]
+            The identifiers of the metrics being tracked by the compiled model.
+        has_validation : bool, optional
+            Whether to include validation monitor names, by default True
+
+        Raises
+        ------
+        ValueError
+            The error message indicating the unknown monitor name.
+        """
+        aliases = {
+            "mse": "mean_squared_error",
+            "mae": "mean_absolute_error",
+            "mape": "mean_absolute_percentage_error",
+            "msle": "mean_squared_logarithmic_error",
+            "acc": "accuracy",
+        }
+        allowed = {"loss"}
+
+        if has_validation:
+            allowed.add("val_loss")
+
+        for metric in metrics:
+            metric_name = aliases.get(metric, metric)
+
+            allowed.add(metric_name)
+
+            if has_validation:
+                allowed.add(f"val_{metric_name}")
+
+        if monitor not in allowed:
+            raise ValueError(
+                f"Unknown callback monitor {monitor!r}. "
+                f"Expected one of: {sorted(allowed)}"
+            )
+
+    def __post_init__(self):
+        # Validate that the metrics specified in the callbacks section are also present in the compile section
+        self._validate_monitor_name(self.callbacks.reduce_lr_monitor, self.compile.metrics)
+        self._validate_monitor_name(self.callbacks.early_stopping_monitor, self.compile.metrics)
+
 
     def to_dict(self) -> dict[str, Any]:
         """

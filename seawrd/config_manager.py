@@ -4,7 +4,7 @@ from pathlib import Path
 from dataclasses import replace
 from typing import Any
 
-from seawrd.config import SEAWRDConfig, ModelConfig, TrainingConfig, CompileConfig, CallbackConfig, DeviceConfig, OutputConfig
+from config import SEAWRDConfig, ModelConfig, TrainingConfig, CompileConfig, CallbackConfig, DeviceConfig, OutputConfig
 
 try:
     import tomllib  # Python 3.11+, tomlib is part of the standard library
