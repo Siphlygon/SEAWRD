@@ -255,7 +255,7 @@ class DNNTrainer:
 
         if optimiser_name == "adam":
             optimiser = keras.optimizers.Adam(
-                learning_rate=float(self.compile_config.learning_rate)
+                learning_rate=self.compile_config.learning_rate
             )
         else:
             raise NotImplementedError(f"Unsupported optimiser: {optimiser_name}")
@@ -264,6 +264,8 @@ class DNNTrainer:
             loss=self.compile_config.loss,
             optimizer=optimiser,
             metrics=list(self.compile_config.metrics),
+            steps_per_execution=self.compile_config.steps_per_execution,
+            jit_compile=self.compile_config.jit_compile  # type: ignore
         )
 
     def _train_single_model(self,
@@ -319,7 +321,7 @@ class DNNTrainer:
             validation_data=(val_features, val_labels),
             callbacks=callbacks,
             verbose=0,
-            shuffle=True)
+            shuffle=self.training_config.shuffle,)
 
         return history
 

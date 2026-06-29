@@ -180,7 +180,7 @@ class CompileConfig(ConfigSection):
     learning_rate: float = 0.005
     metrics: tuple[str, ...] = ("mean_squared_error",)
     steps_per_execution: int | str = "auto"
-    jit_compile: bool = False
+    jit_compile: str | bool = "auto"
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None = None) -> "CompileConfig":
@@ -216,6 +216,10 @@ class CompileConfig(ConfigSection):
         # Check if steps_per_execution is either "auto" or a positive integer
         if not (self.steps_per_execution == "auto" or (isinstance(self.steps_per_execution, int) and self.steps_per_execution > 0)):
             raise ValueError("compile.steps_per_execution must be 'auto' or a positive integer")
+
+        # Check if jit_compile is either "auto" or a boolean
+        if not (self.jit_compile == "auto" or isinstance(self.jit_compile, bool)):
+            raise ValueError("compile.jit_compile must be 'auto' or a boolean value")
 
         # Check if the loss function exists in keras.losses
         validate_keras_field(self.loss, "losses")
