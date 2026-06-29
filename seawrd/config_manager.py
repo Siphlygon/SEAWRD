@@ -4,12 +4,12 @@ from pathlib import Path
 from dataclasses import replace
 from typing import Any
 
-from config import SEAWRDConfig, ModelConfig, TrainingConfig, CompileConfig, CallbackConfig, DeviceConfig, OutputConfig
-
 try:
     import tomllib  # Python 3.11+, tomlib is part of the standard library
 except ModuleNotFoundError:
     import tomli as tomllib  # Python <=3.10 fallback, will require the `tomli` package to be installed
+
+from .config import SEAWRDConfig, ModelConfig, TrainingConfig, CompileConfig, CallbackConfig, DeviceConfig, OutputConfig
 
 
 class ConfigManager:

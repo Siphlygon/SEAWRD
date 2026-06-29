@@ -11,7 +11,7 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
 import numpy as np
 
-from config import ModelConfig, CompileConfig
+from .config import ModelConfig, CompileConfig
 
 
 class DNNManager:

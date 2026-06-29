@@ -26,5 +26,12 @@ license-files = ["LICEN[CS]E.*"]
 [project.urls]
 Repository = "https://github.com/Siphlygon/SEAWRD"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["seawrd*"]
+exclude = ["models*", "docs*", "tests*"]
+namespaces = false
 
+[tool.setuptools.package-data]
+seawrd = ["*.toml", "*.dat"]
 

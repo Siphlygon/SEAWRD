@@ -7,9 +7,9 @@ import pandas as pd
 import tensorflow_docs.modeling
 import matplotlib.pyplot as plt
 
-from model import DNNManager
-from config import SEAWRDConfig
-from config_manager import ConfigManager
+from .model import DNNManager
+from .config import SEAWRDConfig
+from .config_manager import ConfigManager
 
 
 class DNNTrainer:
