@@ -1,9 +1,7 @@
 """
 Unit tests for the DNNManager class in the seawrd.model module.
 """
-
 from pathlib import Path
-from typing import Any
 
 import keras
 import numpy as np
@@ -11,6 +9,7 @@ import pytest
 
 from seawrd.config import CompileConfig, ModelConfig
 from seawrd.model import DNNManager
+from tests.helpers import assert_same_keras_model, assert_same_history, assert_same_keras_normalisation
 
 
 def fitted_normalizer():
@@ -26,108 +25,6 @@ def fitted_normalizer():
     normalizer.adapt(np.array([[1., 2.], [3., 4.]], dtype=np.float32))
     return normalizer
 
-
-# ----------------- Tests for Kerass objects -----------------
-def normalize_config(obj : Any) -> Any:
-    """
-    Convert tuples to lists recursively so Keras configs compare stably.
-    
-    While the default Keras config for input_shape specifies a tuple, under serialisation and deserialisation, this may
-    be converted to a list. This does not change the functionality of the model but will cause an assertion of the two
-    configs to fail. This function recursively converts tuples to lists so that the configs can be compared stably.
-
-    Parameters
-    ----------
-    obj : Any
-        The object to normalize. This can be a tuple, list, dict, or any other type.
-
-    Returns
-    -------
-    Any
-        The normalized object.
-    """
-    if isinstance(obj, tuple):
-        return [normalize_config(x) for x in obj]  # convert tuple to list and normalize elements
-    if isinstance(obj, list):
-        return [normalize_config(x) for x in obj]  # normalize elements of the list
-    if isinstance(obj, dict):
-        return {k: normalize_config(v) for k, v in obj.items()}
-    return obj
-
-
-def assert_same_keras_model(model_a : keras.Model,
-                            model_b : keras.Model,
-                            same_weights : bool = True):
-    """
-    Assert that two Keras models have the same architecture and (optionally) weights.
-
-    Parameters
-    ----------
-    model_a : keras.Model
-        The first Keras model to compare.
-    model_b : keras.Model
-        The second Keras model to compare.
-    same_weights : bool, optional
-        Whether to perform a comparison of weights, by default True
-    """
-    # Assert that the two models have the exact same architecture (layers)
-    config_a = normalize_config(model_a.get_config())
-    config_b = normalize_config(model_b.get_config())
-    assert config_a == config_b, f"Model architectures differ:\n{config_a}\n{config_b}"
-
-    # Assert that the two models have the same number of weight arrays
-    weights_a = model_a.get_weights()
-    weights_b = model_b.get_weights()
-    assert len(weights_a) == len(weights_b), f"Number of weight arrays differ: {len(weights_a)} != {len(weights_b)}"
-
-    # Assert that the two models have the same weight values
-    for i, (wa, wb) in enumerate(zip(weights_a, weights_b)):
-        assert wa.shape == wb.shape, f"Weight {i} shape differs: {wa.shape} != {wb.shape}"
-
-        if same_weights:  # If exact comparison is required, check for exact equality
-            assert np.array_equal(wa, wb), f"Weight {i} values differ"
-
-
-def assert_same_history(history_a : keras.callbacks.History,
-                        history_b : keras.callbacks.History,
-                        rtol : float = 1e-7,
-                        atol : float = 1e-8):
-    """
-    Assert that two Keras History objects have the same keys and values within a specified tolerance.
-
-    Parameters
-    ----------
-    history_a : keras.callbacks.History
-        The first Keras History object to compare.
-    history_b : keras.callbacks.History
-        The second Keras History object to compare.
-    rtol : float, optional
-        The relative tolerance for comparison, by default 1e-7
-    atol : float, optional
-        The absolute tolerance for comparison, by default 1e-8
-    """
-    # Extract the history dictionaries from the History objects
-    hist_a = history_a.history
-    hist_b = history_b.history
-
-    assert hist_a.keys() == hist_b.keys(), f"History keys differ: {hist_a.keys()} != {hist_b.keys()}"
-
-    for key in hist_a:
-        values_a = np.asarray(hist_a[key])
-        values_b = np.asarray(hist_b[key])
-
-        assert values_a.shape == values_b.shape, (
-            f"History entry {key!r} has different shape: "
-            f"{values_a.shape} != {values_b.shape}"
-        )
-
-        np.testing.assert_allclose(
-            values_a,
-            values_b,
-            rtol=rtol,
-            atol=atol,
-            err_msg=f"History entry {key!r} differs",
-        )
 
 # ----------------- Tests for DNNManager -----------------
 def test_from_config_requires_normalizer_when_enabled():
@@ -213,6 +110,8 @@ def test_latest_version_returns_highest_version(tmp_path : Path):
         "Expected latest version to be 3 based on saved model files")
 
 
+@pytest.mark.tf
+@pytest.mark.slow
 def test_model_save_and_load(tmp_path : Path):
     """
     Test that DNNManager.save_model and DNNManager.load_model correctly save and load a model.
@@ -227,6 +126,7 @@ def test_model_save_and_load(tmp_path : Path):
 
     # Save the model
     # todo: it is likely these methods will change to use config or class members, so change tests when appropriate
+    original_model = manager.model
     manager.save_model_version(
         model=manager.model,
         history=manager.history,
@@ -242,9 +142,11 @@ def test_model_save_and_load(tmp_path : Path):
         version=manager.version
     )
 
-    assert_same_keras_model(manager.model, manager.model, same_weights=True)
+    assert_same_keras_model(original_model, manager.model, same_weights=True)
 
 
+@pytest.mark.tf
+@pytest.mark.slow
 def test_model_from_previous_model(tmp_path : Path):
     """
     Test that DNNManager.from_previous_model correctly creates a new DNNManager instance with the same model and
@@ -277,12 +179,12 @@ def test_clone_model_correctly_clones_model():
     Test that DNNManager.clone_model correctly creates a new model with the same architecture and normalisation layer
     (if present) as the original model. The cloned model will NOT have the same weights.
     """
-    cfg = ModelConfig(use_normalisation=False, num_layers=1, num_neurons=4)
-    manager = DNNManager.from_config(cfg, input_shape=(2,))
+    cfg = ModelConfig(use_normalisation=True, num_layers=1, num_neurons=4)
+    manager = DNNManager.from_config(cfg, input_shape=(2,), normaliser=fitted_normalizer())
     model1 = manager.model
     model2 = manager.clone_model()
 
-    assert_same_keras_model(model1, model2, same_weights=False)
+    assert_same_keras_normalisation(model1, model2)
 
 
 # def test_model_name_counts_hidden_layers_without_normalizer():
