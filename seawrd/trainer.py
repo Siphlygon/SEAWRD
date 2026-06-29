@@ -217,7 +217,7 @@ class DNNTrainer:
     def _evaluate_model(self,
                         model: keras.Model,
                         test_features: np.ndarray | pd.DataFrame,
-                        test_labels: np.ndarray | pd.Series):
+                        test_labels: np.ndarray | pd.Series) -> np.ndarray:
         """
         Evaluate a model's performance on the provided test dataset. This method computes the predictions of the model
         on the test features and calculates the error by comparing the predictions with the actual test labels.
@@ -246,6 +246,36 @@ class DNNTrainer:
         actual_values = test_labels.reshape(-1)
         error = actual_values - predictions
         return error
+
+    def _create_validation_split(self,
+                               input_features: pd.DataFrame,
+                               input_labels: pd.Series) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        """
+        Create a validation split from the input features and labels based on the validation split ratio specified in
+        the training configuration.
+        
+        Parameters
+        ----------
+        input_features : pd.DataFrame
+            The features of the input dataset, which will be split into training and validation sets.
+        input_labels : pd.Series
+            The labels of the input dataset, which will be split into training and validation sets.
+            
+        Returns
+        -------
+        pd.DataFrame
+            The features of the training dataset.
+        pd.Series
+            The labels of the training dataset.
+        pd.DataFrame
+            The features of the validation dataset.
+        pd.Series
+            The labels of the validation dataset.
+        """
+        n_val = int(len(input_features) * self.training_config.validation_split)
+        x_train, x_val = input_features[:-n_val], input_features[-n_val:]
+        y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
+        return x_train, y_train, x_val, y_val
 
     def _train_single_model(self,
                            model : keras.Model,
@@ -308,7 +338,7 @@ class DNNTrainer:
                      input_features: pd.DataFrame,
                      input_labels: pd.Series,
                      test_features: pd.DataFrame,
-                     test_labels: pd.Series):
+                     test_labels: pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Train multiple models with different random initialisations and keep the best one based on validation loss. This
         method also collects statistics about each model's performance.
@@ -324,12 +354,19 @@ class DNNTrainer:
             The features of the test dataset.
         test_labels : pd.Series
             The labels of the test dataset.
+        
+        Returns
+        -------
+        np.ndarray
+            The mean prediction errors for each model.
+        np.ndarray
+            The standard deviation of prediction errors for each model.
+        np.ndarray
+            The training losses for each model.
+        np.ndarray
+            The validation losses for each model.
         """
-        # First create the validation set
-        n_val = int(len(input_features) * self.training_config.validation_split)
-
-        x_train, x_val = input_features[:-n_val], input_features[-n_val:]
-        y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
+        x_train, y_train, x_val, y_val = self._create_validation_split(input_features, input_labels)
 
         # Initialize arrays to store statistics about each model
         num_models = self.training_config.num_models

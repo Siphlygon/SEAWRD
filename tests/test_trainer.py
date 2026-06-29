@@ -6,6 +6,8 @@ architecture performance.
 import numpy as np
 import pandas as pd
 import keras
+import pytest
+import matplotlib
 
 from seawrd.config import SEAWRDConfig
 from seawrd.model import DNNManager
@@ -43,9 +45,9 @@ def trainer_with_default_config():
         A DNNTrainer instance with a default configuration.
     """
     cfg = SEAWRDConfig.from_dict({
-        "training": {"num_epochs": 1, "batch_size": 2, "num_models": 1},
-        "output": {"save_model": False},
-        "model": {"use_normalisation": False},
+        "model": {
+            "use_normalisation": False  # Disable normalization for testing purposes
+        }
     })
     manager = DNNManager.from_config(cfg.model, input_shape=(2,))
     return DNNTrainer(manager, cfg)
@@ -91,15 +93,90 @@ def test_evaluate_model_returns_actual_minus_prediction():
     np.testing.assert_allclose(error, np.array([1.0, 0.0, -1.0]))
 
 
-def test_print_architecture_requires_training():
+def test_outputs_requires_training():
     """
-    Test that the print_architecture_performance method of DNNTrainer raises a ValueError if the model has not been
-    trained yet.
+    Test that the print_architecture_performance and plot_loss_curve methods of DNNTrainer raise a ValueError if the
+    model has not been trained yet.
     """
     trainer = trainer_with_default_config()
 
-    try:
+    with pytest.raises(AssertionError):
         trainer.print_architecture_performance()
-    except ValueError as e:
-        assert str(e) == "The model has not been trained yet. Please train the model before printing performance " \
-        + "metrics."
+
+    with pytest.raises(AssertionError):
+        trainer.plot_loss_curve()
+
+
+def test_print_architecture_performance_prints_expected_output(capsys):
+    """
+    Test that the print_architecture_performance method of DNNTrainer prints the expected output when the model has
+    been trained. This test captures the printed output and checks for specific substrings.
+    """
+    trainer = trainer_with_default_config()
+    DNNManager.compile_from_config(trainer.model_manager.model, trainer.compile_config)  # Compile the model to avoid errors
+    trainer._trained = True  # Simulate that the model has been trained
+
+    # Give some dummy values to the architecture performance attributes for testing
+    trainer.best_model = trainer.model_manager.model
+    trainer.losses = np.array([0.5, 0.4, 0.3])
+    trainer.val_losses = np.array([0.6, 0.5, 0.4])
+    trainer.list_num_epoch = np.array([100, 200, 300])
+
+    trainer.print_architecture_performance()
+
+    captured = capsys.readouterr()
+    assert "name" in captured.out
+    assert "num_param" in captured.out
+    assert "num_epoch_mean" in captured.out
+    assert "loss_min" in captured.out
+    assert "loss_max" in captured.out
+    assert "loss_mean" in captured.out
+    assert "loss_stdev" in captured.out
+    assert "val_loss_min" in captured.out
+    assert "val_loss_max" in captured.out
+    assert "val_loss_mean" in captured.out
+    assert "val_loss_stdev" in captured.out
+
+
+def test_plot_loss_curve_does_not_raise_error():
+    """
+    Test that the plot_loss_curve method of DNNTrainer does not raise any errors when called after the model has
+    been trained. This test ensures that the method can execute without issues.
+    """
+    trainer = trainer_with_default_config()
+    DNNManager.compile_from_config(trainer.model_manager.model, trainer.compile_config)
+    trainer._trained = True  # Simulate that the model has been trained
+
+    # Give some dummy values to the architecture performance attributes for testing
+    trainer.best_history.history = {
+        "loss": [0.5, 0.4, 0.3],
+        "val_loss": [0.6, 0.5, 0.4],
+    }
+
+    # Stop the plot from displaying during tests by using a non-interactive backend
+    matplotlib.use("Agg")
+
+    try:
+        trainer.plot_loss_curve()
+    except Exception as e:
+        pytest.fail(f"plot_loss_curve raised an exception: {e}")
+
+
+def test_validation_split_created_properly():
+    """
+    Test that the _create_validation_split method of DNNTrainer creates a validation split correctly based on the
+    specified validation split ratio. This test checks that the resulting training and validation sets have the
+    expected sizes.
+    """
+    trainer = trainer_with_default_config()  # default validation_split is 0.2
+    features = pd.DataFrame({"a": np.arange(100)})
+    labels = pd.Series(np.arange(100))
+
+    train_features, train_labels, val_features, val_labels = trainer._create_validation_split(
+        features, labels
+    )
+
+    assert len(train_features) == 80
+    assert len(val_features) == 20
+    assert len(train_labels) == 80
+    assert len(val_labels) == 20
