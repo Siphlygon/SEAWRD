@@ -3,6 +3,8 @@ Unit tests for the DNNTrainer class in the seawrd.trainer module. These tests co
 DNNTrainer, including rounding to significant figures, generating callbacks, evaluating models, and printing
 architecture performance.
 """
+import os
+
 import numpy as np
 import pandas as pd
 import keras
@@ -46,7 +48,11 @@ def trainer_with_default_config():
     """
     cfg = SEAWRDConfig.from_dict({
         "model": {
-            "use_normalisation": False  # Disable normalization for testing purposes
+            "use_normalisation": False  # Disable normalization for speed in tests
+        },
+        "output": {
+            "save_model": False, 
+            "save_plots": False 
         }
     })
     manager = DNNManager.from_config(cfg.model, input_shape=(2,))
@@ -160,6 +166,44 @@ def test_plot_loss_curve_does_not_raise_error():
         trainer.plot_loss_curve()
     except Exception as e:
         pytest.fail(f"plot_loss_curve raised an exception: {e}")
+
+
+def test_plot_loss_curve_saves_file(tmp_path):
+    """
+    Test that the plot_loss_curve method of DNNTrainer saves the loss curve plot to a file when the save_plots flag is
+    set to True and does not when save_plots is set to False in the output configuration.
+    """
+    trainer = trainer_with_default_config()
+    trainer.output_config = trainer.output_config.with_update(save_plots=True)
+    DNNManager.compile_from_config(trainer.model_manager.model, trainer.compile_config)
+    trainer._trained = True  # Simulate that the model has been trained
+
+    # Give some dummy values to the architecture performance attributes for testing
+    trainer.best_history.history = {
+        "loss": [0.5, 0.4, 0.3],
+        "val_loss": [0.6, 0.5, 0.4],
+    }
+
+    # Stop the plot from displaying during tests by using a non-interactive backend
+    matplotlib.use("Agg")
+
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+
+    trainer.plot_loss_curve()
+    expected_file = tmp_path / f"{trainer.best_model.name}_plot_loss.png"
+    assert expected_file.exists(), f"Expected plot file {expected_file} does not exist."
+
+    # delete the file to test the case when save_plots is False
+    expected_file.unlink()
+
+    # Now test with save_plots set to False
+    trainer.output_config = trainer.output_config.with_update(save_plots=False)
+    trainer.plot_loss_curve()
+    assert not expected_file.exists(), f"Plot file {expected_file} should not exist when save_plots is False."
+
+    # Restore the original working directory
+    os.chdir(original_cwd)
 
 
 def test_validation_split_created_properly():

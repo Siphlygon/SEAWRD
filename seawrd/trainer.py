@@ -142,7 +142,8 @@ class DNNTrainer:
         if max_y is not None:
             plt.ylim(ymax=max_y)
 
-        plt.savefig(self.best_model.name+"_plot_loss.png", dpi=300)
+        if self.output_config.save_plots:
+            plt.savefig(self.best_model.name+"_plot_loss.png", dpi=300)
         plt.show()
         plt.close()
 
