@@ -20,7 +20,7 @@ class DNNManager:
     """
     def __init__(self,
                  model : keras.Sequential,
-                 history : dict | None,
+                 history : keras.callbacks.History | None,
                  version : int,
                  model_name : str):
         """
@@ -31,7 +31,7 @@ class DNNManager:
         ----------
         model : keras.Sequential
             The Keras Sequential model to be managed.
-        history : dict | None
+        history : keras.callbacks.History | None
             The training history of the model, if available. If None, it indicates that the model has not been trained yet.
         version : int
             The version number of the model. This is used for saving and loading different versions of the model.
@@ -40,6 +40,8 @@ class DNNManager:
         """
         self.model = model
         self.history = history
+        if history is None:
+            self.history = keras.callbacks.History()
         self.version = version
         self.model_name = model_name
 
@@ -348,7 +350,7 @@ class DNNManager:
         # Save the model and history
         model.save(paths["model"])
         with open(paths["history"], "wb") as f:
-            pickle.dump(history.history, f)
+            pickle.dump(history, f)
 
         print(f"Saved model version v{version}")
         print(f"Model:   {paths['model']}")
@@ -359,7 +361,7 @@ class DNNManager:
     def get_model_version(self,
                            model_dir : Path | str,
                            model_name : str,
-                           version : int | None = None) -> tuple[keras.Model, dict | None, int]:
+                           version : int | None = None) -> tuple[keras.Model, keras.callbacks.History | None, int]:
         """
         Retrieves a specific version of the model and its training history.
 
@@ -374,7 +376,7 @@ class DNNManager:
 
         Returns
         -------
-        tuple[keras.Model, dict | None, int]
+        tuple[keras.Model, keras.callbacks.History | None, int]
             A tuple containing the loaded model, its training history (if available), and the version number.
 
         Raises
@@ -390,8 +392,8 @@ class DNNManager:
             version = self.get_latest_version(model_dir, model_name)
 
         # If the specified version does not exist, raise an error
-        if version == 0:
-            raise FileNotFoundError(f"No saved model found for '{model_name}'.")
+        # if version == 0:
+        #     raise FileNotFoundError(f"No saved model found for '{model_name}'.")
 
         paths = self._get_model_paths(model_dir, model_name, version)
         model = keras.models.load_model(paths["model"])
