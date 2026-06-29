@@ -182,6 +182,31 @@ class CompileConfig(ConfigSection):
     steps_per_execution: int | str = "auto"
     jit_compile: bool = False
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None = None) -> "CompileConfig":
+        """
+        Create a CompileConfig instance from a dictionary representation.
+        
+        Overrides the base from_dict method to ensure that the 'metrics' field is converted to a tuple if it is provided
+        as a list.
+
+        Parameters
+        ----------
+        data : Mapping[str, Any] | None, optional
+            The dictionary representation of the configuration, by default None
+
+        Returns
+        -------
+        CompileConfig
+            The created CompileConfig instance
+        """
+        data = dict(data or {})
+
+        if "metrics" in data:
+            data["metrics"] = tuple(data["metrics"])
+
+        return super().from_dict(data)
+
     def __post_init__(self):
         if self.learning_rate <= 0:
             raise ValueError("compile.learning_rate must be > 0")
@@ -202,10 +227,6 @@ class CompileConfig(ConfigSection):
         # Check if all metrics exist in keras.metrics
         for metric in self.metrics:
             validate_keras_field(metric, "metrics")
-
-        # # Check if the optimizer exists in keras.optimizers
-        # if not hasattr(keras.optimizers, self.optimiser.capitalize()):
-        #     raise ValueError(f"compile.optimiser '{self.optimiser}' is not a valid Keras optimizer.")
 
 
 @dataclass(frozen=True)

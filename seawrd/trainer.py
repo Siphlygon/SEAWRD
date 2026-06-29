@@ -263,7 +263,7 @@ class DNNTrainer:
         model.compile(
             loss=self.compile_config.loss,
             optimizer=optimiser,
-            metrics=self.compile_config.metrics,
+            metrics=list(self.compile_config.metrics),
         )
 
     def _train_single_model(self,
