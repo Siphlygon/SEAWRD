@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional, Sequence, Tuple, Union
 import os
 
-os.environ["KERAS_BACKEND"] = "tensorflow" 
+os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
 import numpy as np
 import pandas as pd
@@ -337,14 +337,18 @@ class DataPreprocessor:
 if __name__ == "__main__":
     # Dummy data for testing the DataPreprocessor class
     data = {
-        "R_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "R_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-        "M_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "x_core'": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        "x_H2O": [0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
+        "T_irr": [100, 200, 300, 400, 500, 600],
+        "T_b": [150, 250, 350, 450, 550, 650],
         "M_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+        "M_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "R_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+        "R_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         "errcode": [0, 0, 1, 0, 0, 0],
     }
     df = pd.DataFrame(data)
-    preprocessor = DataPreprocessor(df, label="R_p", features=["R_a", "R_b", "M_a", "M_b"])
+    preprocessor = DataPreprocessor(df, label="R_p", features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"])
     preprocessor.prepare()
 
     print("Prepared DataFrame:")
