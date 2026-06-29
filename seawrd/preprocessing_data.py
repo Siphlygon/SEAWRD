@@ -32,8 +32,8 @@ class DataPreprocessor:
         label: Optional[str] = None, #Default expects a string, i.e. R_p
         test_size: float = 0.2, #Fraction of data to use for testing
         random_state: Optional[int] = 0, #Random state for reproducibility
-        quality_column: str = "errcode", #Name of filter column
-        quality_value=0, #The value we allow through the filter
+        quality_column: str | None = "errcode", #Name of filter column
+        quality_value: int | None = 0, #The value we allow through the filter
         normalize: bool = True, #Whether or not to fit a Keras normalization layer
     ):
         """
@@ -51,9 +51,9 @@ class DataPreprocessor:
             Fraction of data to use for testing, by default 0.2
         random_state : Optional[int], optional
             Random seed for reproducibility, by default 0
-        quality_column : str, optional
-            Column name used for filtering poor-quality rows, by default "errcode"
-        quality_value : optional
+        quality_column : str | None, optional
+            Column name used for filtering poor-quality rows, by default None, which means no filtering is applied
+        quality_value : int | None, optional
             Value in the quality column that indicates a good-quality row, by default 0
         normalize : bool, optional
             Whether to fit a Keras normalization layer to the features, by default True
@@ -71,7 +71,9 @@ class DataPreprocessor:
         self.feature_names_: Optional[list[str]] = None
         self.label_name_: Optional[str] = None
         self.normalizer: Optional[keras.layers.Normalization] = None
-        self._prepared = False
+
+        # Run the preparation step to validate inputs, filter data, and derive features/label
+        self._prepare()
 
 
     # ---------- DATAFILE PREPARATION METHODS ----------
@@ -107,8 +109,10 @@ class DataPreprocessor:
         DataFrame
             Filtered DataFrame.
         """
-        if self.quality_column in df.columns:
-            df = df[df[self.quality_column] == self.quality_value]
+        if self.quality_column not in df.columns:
+            raise ValueError(f"Quality column '{self.quality_column}' is not present in the dataframe")
+
+        df = df[df[self.quality_column] == self.quality_value]
         return df.copy()
 
     def _derive_columns(self, df: DataFrame) -> DataFrame:
@@ -191,7 +195,7 @@ class DataPreprocessor:
         numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
         return [col for col in numeric_columns if col not in {label, self.quality_column}]
 
-    def prepare(self) -> None:
+    def _prepare(self) -> None:
         """
         Prepare the DataFrame for training by validating inputs, filtering poor-quality rows, deriving new columns, and
         inferring features and label.
@@ -202,8 +206,10 @@ class DataPreprocessor:
             If no feature columns are identified for training.
         """
         self._validate_inputs()
+        df = self.df.copy()
 
-        df = self._filter_quality(self.df)
+        if self.quality_column is not None:
+            df = self._filter_quality(df)
         df = self._derive_columns(df)
 
         self.label_name_ = self._infer_label(df)
@@ -226,9 +232,6 @@ class DataPreprocessor:
         Tuple[DataFrame, DataFrame, pd.Series, pd.Series]
             Training and testing feature and label DataFrames/Series.
         """
-        if not self._prepared:
-            self.prepare()
-
         train_df = self.df.sample(frac=1.0 - self.test_size, random_state=self.random_state)
         test_df = self.df.drop(train_df.index)
 
@@ -299,20 +302,14 @@ class DataPreprocessor:
 
     def to_tf_dataset(
         self,
-        features: Union[DataFrame, np.ndarray],
-        labels: Union[pd.Series, np.ndarray],
         batch_size: int = 32,
         shuffle: bool = True,
     ) -> tf.data.Dataset:
         """
-        Convert features and labels into a TensorFlow Dataset.
+        Convert the prepared data into a TensorFlow Dataset.
 
         Parameters
         ----------
-        features : Union[DataFrame, np.ndarray]
-            The input features for the dataset.
-        labels : Union[pd.Series, np.ndarray]
-            The labels for the dataset.
         batch_size : int, optional
             The batch size for the dataset, by default 32
         shuffle : bool, optional
@@ -323,10 +320,8 @@ class DataPreprocessor:
         tf.data.Dataset
             The converted TensorFlow Dataset.
         """
-        if isinstance(features, pd.DataFrame):
-            features = features.to_numpy(dtype=np.float32)
-        if isinstance(labels, pd.Series):
-            labels = labels.to_numpy(dtype=np.float32)
+        # Get the training data as NumPy arrays
+        _, features, _, labels, _ = self.get_training_data(return_array=True)
 
         dataset = tf.data.Dataset.from_tensor_slices((features, labels))
         if shuffle:
@@ -349,7 +344,6 @@ if __name__ == "__main__":
     }
     df = pd.DataFrame(data)
     preprocessor = DataPreprocessor(df, label="R_p", features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"])
-    preprocessor.prepare()
 
     print("Prepared DataFrame:")
     print(preprocessor.df)
@@ -368,7 +362,7 @@ if __name__ == "__main__":
     print("\nFitted Normalizer Mean:")
     print(normalizer.mean.numpy())
 
-    tf_dataset = preprocessor.to_tf_dataset(train_features, train_labels)
+    tf_dataset = preprocessor.to_tf_dataset(batch_size=32, shuffle=True)
     print("\nTensorFlow Dataset:")
     for batch_features, batch_labels in tf_dataset.take(1):
         print("Batch Features:")
