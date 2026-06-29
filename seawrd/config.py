@@ -102,6 +102,8 @@ class ConfigSection:
         ----------
         self : Self
             The current instance of the dataclass.
+        **updates : Any
+            Keyword arguments representing the fields to update and their new values.
 
         Returns
         -------

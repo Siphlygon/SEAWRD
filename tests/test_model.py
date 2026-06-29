@@ -57,11 +57,9 @@ def normalize_config(obj : Any) -> Any:
 
 def assert_same_keras_model(model_a : keras.Model,
                             model_b : keras.Model,
-                            exact : bool = True,
-                            rtol : float = 1e-7,
-                            atol : float = 1e-8):
+                            same_weights : bool = True):
     """
-    Assert that two Keras models have the same architecture and weights.
+    Assert that two Keras models have the same architecture and (optionally) weights.
 
     Parameters
     ----------
@@ -69,12 +67,8 @@ def assert_same_keras_model(model_a : keras.Model,
         The first Keras model to compare.
     model_b : keras.Model
         The second Keras model to compare.
-    exact : bool, optional
-        Whether to perform an exact comparison of weights, by default True
-    rtol : float, optional
-        The relative tolerance for weight comparison, by default 1e-7
-    atol : float, optional
-        The absolute tolerance for weight comparison, by default 1e-8
+    same_weights : bool, optional
+        Whether to perform a comparison of weights, by default True
     """
     # Assert that the two models have the exact same architecture (layers)
     config_a = normalize_config(model_a.get_config())
@@ -90,11 +84,8 @@ def assert_same_keras_model(model_a : keras.Model,
     for i, (wa, wb) in enumerate(zip(weights_a, weights_b)):
         assert wa.shape == wb.shape, f"Weight {i} shape differs: {wa.shape} != {wb.shape}"
 
-        if exact:  # If exact comparison is required, check for exact equality
+        if same_weights:  # If exact comparison is required, check for exact equality
             assert np.array_equal(wa, wb), f"Weight {i} values differ"
-        else:
-            np.testing.assert_allclose(wa, wb, rtol=rtol, atol=atol,
-                                       err_msg=f"Weight {i} values differ beyond tolerance")
 
 
 def assert_same_history(history_a : keras.callbacks.History,
@@ -251,7 +242,7 @@ def test_model_save_and_load(tmp_path : Path):
         version=manager.version
     )
 
-    assert_same_keras_model(manager.model, manager.model, exact=True)
+    assert_same_keras_model(manager.model, manager.model, same_weights=True)
 
 
 def test_model_from_previous_model(tmp_path : Path):
@@ -275,10 +266,24 @@ def test_model_from_previous_model(tmp_path : Path):
         version=manager1.version
     )
 
-    assert_same_keras_model(manager1.model, manager2.model, exact=True)
+    assert_same_keras_model(manager1.model, manager2.model, same_weights=True)
     assert manager2.version == manager1.version, "Loaded version does not match the saved version"
     assert manager2.model_name == manager1.model_name, "Loaded model name does not match the saved model name"
     assert_same_history(manager1.history, manager2.history)
+
+
+def test_clone_model_correctly_clones_model():
+    """
+    Test that DNNManager.clone_model correctly creates a new model with the same architecture and normalisation layer
+    (if present) as the original model. The cloned model will NOT have the same weights.
+    """
+    cfg = ModelConfig(use_normalisation=False, num_layers=1, num_neurons=4)
+    manager = DNNManager.from_config(cfg, input_shape=(2,))
+    model1 = manager.model
+    model2 = manager.clone_model()
+
+    assert_same_keras_model(model1, model2, same_weights=False)
+
 
 # def test_model_name_counts_hidden_layers_without_normalizer():
 #     """

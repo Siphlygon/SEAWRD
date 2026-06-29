@@ -167,6 +167,17 @@ def test_output_config_rejects_invalid_values(kwargs : dict):
         OutputConfig.from_dict(kwargs)
 
 
+def test_with_update_for_config_sections():
+    """
+    Test that the with_update method of any ConfigSection correctly updates the configuration.
+    """
+    cfg = ModelConfig.from_dict({})
+    updated_cfg = cfg.with_update(num_layers=5)
+
+    assert updated_cfg.num_layers == 5
+    assert updated_cfg.num_neurons == cfg.num_neurons  # Unchanged
+
+
 # ---------- Tests for SEAWRDConfig validation ----------
 def test_default_config_is_valid():
     """
@@ -195,3 +206,4 @@ def test_callback_monitor_must_be_known_metric():
             "compile": {"metrics": ["mean_squared_error"]},
             "callbacks": {"early_stopping_monitor": "accuracy"},
         })
+
