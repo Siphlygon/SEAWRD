@@ -207,7 +207,7 @@ class DNNManager:
         num_neurons = self.model.layers[1].units if num_layers > 0 else 0
         num_inputs = self.model.input_shape[-1] if self.model.input_shape else 0
         num_outputs = self.model.output_shape[-1] if self.model.output_shape else 0
-        return f"R({num_layers}x{num_neurons})_{num_inputs}i_{num_outputs}o)"
+        return f"R({num_layers}x{num_neurons}_{num_inputs}i_{num_outputs}o)"
 
 
     # ---------- MODEL SAVING AND LOADING ----------

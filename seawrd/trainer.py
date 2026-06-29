@@ -327,8 +327,7 @@ class DNNTrainer:
                      input_features: pd.DataFrame,
                      input_labels: pd.Series,
                      test_features: pd.DataFrame,
-                     test_labels: pd.Series,
-                     num_models: int = 10):
+                     test_labels: pd.Series):
         """
         Train multiple models with different random initializations and keep the best one based on validation loss. This
         method also collects statistics about each model's performance.
@@ -344,8 +343,6 @@ class DNNTrainer:
             The features of the test dataset.
         test_labels : pd.Series
             The labels of the test dataset.
-        num_models : int, optional
-            The number of models to train, by default 10
         """
         # First create the validation set
         n_val = int(len(input_features) * self.training_config.validation_split)
@@ -354,6 +351,7 @@ class DNNTrainer:
         y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
 
         # Initialize arrays to store statistics about each model
+        num_models = self.training_config.num_models
         rp_means = np.zeros(num_models)
         rp_stds = np.zeros(num_models)
         losses = np.zeros(num_models)
@@ -449,8 +447,7 @@ if __name__ == "__main__":
     rp_means, rp_stds, losses, val_losses = dnn_trainer.train_models(input_features=input_features,
                                                                     input_labels=input_labels,
                                                                     test_features=test_features,
-                                                                    test_labels=test_labels,
-                                                                    num_models=5)
+                                                                    test_labels=test_labels)
 
     # Print the architecture performance of the best model
     dnn_trainer.print_architecture_performance()
