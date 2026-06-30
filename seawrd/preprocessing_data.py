@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import argparse
+import os
 from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Union
 
-import os
 import numpy as np
 import pandas as pd
 
@@ -348,42 +349,19 @@ class DataPreprocessor:
 
 
 if __name__ == "__main__":
-    # Dummy data for testing the DataPreprocessor class
-    data = {
-        "x_core'": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
-        "x_H2O": [0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
-        "T_irr": [100, 200, 300, 400, 500, 600],
-        "T_b": [150, 250, 350, 450, 550, 650],
-        "M_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-        "M_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "R_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-        "R_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "errcode": [0, 0, 1, 0, 0, 0],
-    }
-    df = pd.DataFrame(data)
-    preprocessor = DataPreprocessor(df, label="R_p", features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"])
+    parser = argparse.ArgumentParser(description="Preprocess planetary data for ML regression training.")
+    parser.add_argument("input_path", type=str, help="Path to the input data file")
+    parser.add_argument("--output-path", type=str, help="Path to save the preprocessed .npz file")
+    args = parser.parse_args()
 
-    print("Prepared DataFrame:")
-    print(preprocessor.df)
+    # Load the input data
+    input_data = pd.read_table(args.input_path, sep=r"\s+")
+    features = [col for col in input_data.columns if col not in ["R_p", "M_p", "errcode"]]
+    label = "R_p"
 
-    train_features, test_features, train_labels, test_labels = preprocessor.split()
-    print("\nTrain Features:")
-    print(train_features)
-    print("\nTest Features:")
-    print(test_features)
-    print("\nTrain Labels:")
-    print(train_labels)
-    print("\nTest Labels:")
-    print(test_labels)
+    # Initialise the DataPreprocessor with the input data
+    preprocessor = DataPreprocessor(input_data, features, label)
 
-    normaliser = fit_normaliser(train_features)
-    print("\nFitted Normaliser Mean:")
-    print(normaliser.mean.numpy())
-
-    # tf_dataset = preprocessor.to_tf_dataset(batch_size=32, shuffle=True)
-    # print("\nTensorFlow Dataset:")
-    # for batch_features, batch_labels in tf_dataset.take(1):
-    #     print("Batch Features:")
-    #     print(batch_features.numpy())
-    #     print("Batch Labels:")
-    #     print(batch_labels.numpy())
+    # If specified, save the preprocessed data to a .npz file
+    if args.output_path:
+        preprocessor.save_to_npz(args.output_path)
