@@ -19,6 +19,10 @@ import numpy as np
 if TYPE_CHECKING:
     from .config import SEAWRDConfig
 
+from .utils import get_logger
+
+logger = get_logger("seawrd.device_selection")
+
 
 def choose_training_device(config: SEAWRDConfig,
                            x_train: np.ndarray,
@@ -27,7 +31,7 @@ def choose_training_device(config: SEAWRDConfig,
                            y_val: np.ndarray,
                            benchmark_epochs: int = 10,
                            benchmark_repeats: int = 3,
-                           warmup_epochs: int = 1) -> dict[str, Any]:
+                           warmup_epochs: int = 10) -> dict[str, Any]:
     """
     Benchmark CPU and GPU in isolated subprocesses and choose a backend for training based on the results.
     
@@ -48,7 +52,7 @@ def choose_training_device(config: SEAWRDConfig,
     benchmark_repeats : int, optional
         The number of times to repeat the benchmark for each device. Default is 3.
     warmup_epochs : int, optional
-        The number of warmup epochs to run before benchmarking. Default is 1.
+        The number of warmup epochs to run before benchmarking. Default is 10.
 
     Returns
     -------
@@ -63,6 +67,7 @@ def choose_training_device(config: SEAWRDConfig,
 
     # Use a temporary directory to store the benchmark data and configuration for the worker processes
     with tempfile.TemporaryDirectory() as tmpdir:
+        logger.debug("Using temporary directory for benchmarking: %s", tmpdir)
         tmpdir = Path(tmpdir)
         data_path = tmpdir / "benchmark_data.npz"
         worker_config_path = tmpdir / "worker_config.json"
@@ -85,33 +90,38 @@ def choose_training_device(config: SEAWRDConfig,
             "benchmark_repeats": int(benchmark_repeats),
             "warmup_epochs": int(warmup_epochs),
         }
+        logger.debug("Creating worker configuration: %s", worker_config)
         worker_config_path.write_text(json.dumps(worker_config))
 
-        # Run the CPU benchmark first, then the GPU benchmark. If the GPU benchmark fails, we fall back to CPU.
-        cpu_result = _run_worker("cpu", worker_config_path)
-
+        # Run GPU benchmark first as it can fail if there is issues detecting GPU
         try:
             gpu_result = _run_worker("gpu", worker_config_path)
-        except Exception as exc: # default to CPU if the GPU benchmark fails
+        except Exception as exc:
+            logger.warning("GPU benchmark failed: %s", exc)
             return {
                 "device": "cpu",
                 "reason": f"CPU selected because the GPU benchmark failed: {exc}",
-                "cpu": cpu_result,
+                "cpu": None,
                 "gpu": None,
             }
 
-    # Check if a GPU was detected in the GPU benchmark result. If not, we fall back to CPU.
-    gpu_detected = bool(gpu_result.get("gpu_detected", gpu_result.get("gpu_devices")))
-    if not gpu_detected:
-        return {
-            "device": "cpu",
-            "reason": (
-                "CPU selected because TensorFlow did not detect a GPU "
-                "inside the GPU benchmark process."
-            ),
-            "cpu": cpu_result,
-            "gpu": gpu_result,
-        }
+        # Check if a GPU was detected in the GPU benchmark result. If not, we fall back to CPU.
+        # note: done this way to avoid instantiating tensorflow outside of the subprocess
+        gpu_detected = bool(gpu_result.get("gpu_detected", gpu_result.get("gpu_devices")))
+        if not gpu_detected:
+            logger.warning("GPU benchmark did not detect a GPU. Falling back to CPU.")
+            return {
+                "device": "cpu",
+                "reason": (
+                    "CPU selected because TensorFlow did not detect a GPU "
+                    "inside the GPU benchmark process."
+                ),
+                "cpu": None,
+                "gpu": gpu_result,
+            }
+
+        # Otherwise, now benchmark the CPU.
+        cpu_result = _run_worker("cpu", worker_config_path)
 
     # Compare the median training times for CPU and GPU to determine which device to use for training. If the GPU is
     # faster than the CPU by at least the minimum speedup specified in the configuration, we select the GPU. Otherwise,
@@ -122,6 +132,12 @@ def choose_training_device(config: SEAWRDConfig,
     min_gpu_speedup = _get_min_gpu_speedup(config)
 
     if speedup >= min_gpu_speedup:
+        logger.info(
+            "GPU selected for training: GPU was %.2fx faster than CPU, "
+            "exceeding the %.2fx minimum speedup threshold.",
+            speedup,
+            min_gpu_speedup,
+        )
         return {
             "device": "gpu",
             "reason": (
@@ -132,6 +148,12 @@ def choose_training_device(config: SEAWRDConfig,
             "gpu": gpu_result,
         }
 
+    logger.info(
+        "CPU selected for training: GPU was only %.2fx faster than CPU, "
+        "below the %.2fx minimum speedup threshold.",
+        speedup,
+        min_gpu_speedup,
+    )
     return {
         "device": "cpu",
         "reason": (
@@ -180,6 +202,7 @@ def _run_worker(mode: str, worker_config_path: Path) -> dict[str, Any]:
     # Run the benchmark worker process as a subprocess, passing the worker configuration file path as an argument.
     # Capture the output and check for errors.
     try:
+        logger.info("Running %s benchmark worker subprocess...", mode.upper())
         completed = subprocess.run(
             [
                 sys.executable,
@@ -188,7 +211,8 @@ def _run_worker(mode: str, worker_config_path: Path) -> dict[str, Any]:
                 str(worker_config_path),
             ],
             env=env,
-            capture_output=True,
+            # capture_output=True,
+            stdout=subprocess.PIPE,  # capture only stdout, not logging in stderr
             text=True,
             check=True,
         )
@@ -213,7 +237,12 @@ def _run_worker(mode: str, worker_config_path: Path) -> dict[str, Any]:
 
 def _config_to_worker_payload(config: SEAWRDConfig | dict[str, Any] | Any) -> dict[str, Any]:
     """
-    Convert a configuration object to a payload for the benchmark worker. The configuration object can be a SEAWRDConfig, a dictionary, or any object that provides a `to_dict` method. The function returns a dictionary representation of the configuration that can be serialized to JSON for the worker process. This allows the benchmark worker to receive the necessary configuration for training the model without requiring the full SEAWRDConfig class or other dependencies.
+    Convert a configuration object to a payload for the benchmark worker.
+    
+    The configuration object can be a SEAWRDConfig, a dictionary, or any object that provides a `to_dict` method. The
+    function returns a dictionary representation of the configuration that can be serialized to JSON for the worker
+    process. This allows the benchmark worker to receive the necessary configuration for training the model without
+    requiring the full SEAWRDConfig class or other dependencies.
 
     Parameters
     ----------
@@ -241,7 +270,10 @@ def _config_to_worker_payload(config: SEAWRDConfig | dict[str, Any] | Any) -> di
 
 def _get_min_gpu_speedup(config: SEAWRDConfig | dict[str, Any] | Any) -> float:
     """
-    Get the minimum GPU speedup from the configuration object. The configuration object can be a SEAWRDConfig, a dictionary, or any object that provides a `device.min_gpu_speedup` attribute. The function returns the minimum GPU speedup as a float, which is used to determine whether to select the GPU for training based on the benchmark results.
+    Get the minimum GPU speedup from the configuration object. The configuration object can be a SEAWRDConfig, a
+    dictionary, or any object that provides a `device.min_gpu_speedup` attribute. The function returns the minimum GPU
+    speedup as a float, which is used to determine whether to select the GPU for training based on the benchmark
+    results.
 
     Parameters
     ----------

@@ -20,7 +20,9 @@ import tensorflow as tf
 from .config import SEAWRDConfig
 from .model import DNNManager
 from .trainer import DNNTrainer
-from .utils import fit_normaliser, load_npz_bundle
+from .utils import fit_normaliser, load_npz_bundle, get_logger
+
+logger = get_logger("seawrd.device_benchmark_worker")
 
 
 def _fit_once(config: SEAWRDConfig,
@@ -95,10 +97,29 @@ def main():
     command line arguments, loads the training and validation data, and runs the benchmark training for both CPU and GPU
     devices. The results are printed as a JSON object to stdout.
     """
+    # First check if a GPU is available in the current environment. If not, we can skip the GPU benchmark and just run
+    # the CPU benchmark.
+    gpu_devices = tf.config.list_physical_devices("GPU")
+    if os.environ.get("CUDA_VISIBLE_DEVICES") == "0" and not gpu_devices:
+        logger.warning(
+            "CUDA_VISIBLE_DEVICES is set to '0' but no GPU was detected. "
+            "Skipping GPU benchmark and falling back to CPU."
+        )
+        result = {
+            "gpu_detected": False,
+            "gpu_devices": [],
+            "median_seconds": None,
+            "times": []
+        }
+        print(json.dumps(result))
+        return
+
     # Read the worker config from the command line argument
+    logger.debug("Reading worker configuration from %s", sys.argv[1])
     worker_config = json.loads(Path(sys.argv[1]).read_text())
 
     # Load the benchmark data from the specified path in the worker config
+    logger.debug("Loading benchmark data from %s", worker_config["data_path"])
     data = load_npz_bundle(Path(worker_config["data_path"]))
     x_train = data["input_features"]
     y_train = data["input_labels"]
@@ -112,9 +133,14 @@ def main():
     warmup_epochs = worker_config["warmup_epochs"]
     benchmark_epochs = worker_config["benchmark_epochs"]
     repeats = worker_config["benchmark_repeats"]
+    logger.info(
+        "Starting benchmark with %d warmup epochs, %d benchmark epochs, and %d repeats.",
+        warmup_epochs, benchmark_epochs, repeats
+    )
 
     # Run a warmup training to stabilise performance before benchmarking
     # This is important because the first training run is always slower due to TensorFlow's initialisation..
+    logger.debug("Running warmup training...")
     _fit_once(
         config,
         x_train,
@@ -137,11 +163,12 @@ def main():
             benchmark_epochs,
             seed=repeat+1
         )
+        logger.info("Benchmark repeat %d/%d: %d epochs completed in %.3f seconds (%.5f seconds per epoch)",
+                    repeat+1, repeats, benchmark_epochs, elapsed, elapsed/benchmark_epochs)
         times.append(elapsed)
 
     # Print the benchmark results as a JSON object to stdout, including whether a GPU was detected and the list of
     # available GPU devices. The main process will parse this output to determine which device to use for training.
-    gpu_devices = tf.config.list_physical_devices("GPU")
     result = {
         "gpu_detected": bool(gpu_devices),
         "gpu_devices": [device.name for device in gpu_devices],
