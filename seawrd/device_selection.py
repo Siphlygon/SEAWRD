@@ -11,11 +11,13 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Mapping
 
 import numpy as np
 
-from .config import SEAWRDConfig
+# Avoid importing from .config to keep this module lightweight, only use for type hints.
+if TYPE_CHECKING:
+    from .config import SEAWRDConfig
 
 
 def choose_training_device(config: SEAWRDConfig,
@@ -68,17 +70,17 @@ def choose_training_device(config: SEAWRDConfig,
         # Save the training and validation data to a .npz file for the worker processes to load
         np.savez(
             data_path,
-            x_train=x_train,
-            y_train=y_train,
-            x_val=x_val,
-            y_val=y_val,
+            input_features=x_train,
+            input_labels=y_train,
+            test_features=x_val,
+            test_labels=y_val,
         )
 
         # Create a worker configuration dictionary containing the paths to the data and the SEAWRD configuration, as
         # well as the benchmark parameters
         worker_config = {
             "data_path": str(data_path),
-            "seawrd_config": config.to_dict(),
+            "seawrd_config": _config_to_worker_payload(config),
             "benchmark_epochs": int(benchmark_epochs),
             "benchmark_repeats": int(benchmark_repeats),
             "warmup_epochs": int(warmup_epochs),
@@ -117,7 +119,7 @@ def choose_training_device(config: SEAWRDConfig,
     cpu_time = float(cpu_result["median_seconds"])
     gpu_time = float(gpu_result["median_seconds"])
     speedup = cpu_time / gpu_time
-    min_gpu_speedup = config.device.min_gpu_speedup
+    min_gpu_speedup = _get_min_gpu_speedup(config)
 
     if speedup >= min_gpu_speedup:
         return {
@@ -207,3 +209,61 @@ def _run_worker(mode: str, worker_config_path: Path) -> dict[str, Any]:
 
     # TensorFlow logs go to stderr; the worker prints one final JSON line to stdout.
     return json.loads(lines[-1])
+
+
+def _config_to_worker_payload(config: SEAWRDConfig | dict[str, Any] | Any) -> dict[str, Any]:
+    """
+    Convert a configuration object to a payload for the benchmark worker. The configuration object can be a SEAWRDConfig, a dictionary, or any object that provides a `to_dict` method. The function returns a dictionary representation of the configuration that can be serialized to JSON for the worker process. This allows the benchmark worker to receive the necessary configuration for training the model without requiring the full SEAWRDConfig class or other dependencies.
+
+    Parameters
+    ----------
+    config : SEAWRDConfig | dict[str, Any] | Any
+        The configuration object to convert.
+
+    Returns
+    -------
+    dict[str, Any]
+        The benchmark worker payload.
+
+    Raises
+    ------
+    TypeError
+        If the configuration object does not provide a `to_dict` method and is not a mapping.
+    """
+    if hasattr(config, "to_dict"):
+        return dict(config.to_dict())
+    if isinstance(config, Mapping):
+        return dict(config)
+    raise TypeError(
+        "config must provide to_dict() or be a mapping for benchmark serialization"
+    )
+
+
+def _get_min_gpu_speedup(config: SEAWRDConfig | dict[str, Any] | Any) -> float:
+    """
+    Get the minimum GPU speedup from the configuration object. The configuration object can be a SEAWRDConfig, a dictionary, or any object that provides a `device.min_gpu_speedup` attribute. The function returns the minimum GPU speedup as a float, which is used to determine whether to select the GPU for training based on the benchmark results.
+
+    Parameters
+    ----------
+    config : SEAWRDConfig | dict[str, Any] | Any
+        The configuration object to extract the minimum GPU speedup from.
+
+    Returns
+    -------
+    float
+        The minimum GPU speedup.
+
+    Raises
+    ------
+    TypeError
+        If the configuration object does not provide a `device.min_gpu_speedup` attribute and is not a mapping.
+    """
+    if hasattr(config, "device") and hasattr(config.device, "min_gpu_speedup"):
+        return float(config.device.min_gpu_speedup)
+
+    if isinstance(config, Mapping):
+        device_section = config.get("device", {})
+        if isinstance(device_section, Mapping) and "min_gpu_speedup" in device_section:
+            return float(device_section["min_gpu_speedup"])
+
+    raise TypeError("config must provide device.min_gpu_speedup for benchmarking")
