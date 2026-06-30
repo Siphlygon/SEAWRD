@@ -44,6 +44,9 @@ early_stopping_patience = 50            # Number of epochs with no improvement a
 mode = "auto"               # Whether to use CPU, GPU, or automatically select the best available device ("cpu", "gpu", or "auto")
 benchmark_device = true     # Whether to benchmark the device performance before training (can help in selecting the best device)
 min_gpu_speedup = 1.2       # Minimum speedup factor required to use GPU over CPU (if using "auto" mode)
+warmup_epochs = 10          # Number of warmup epochs to run before benchmarking (helps stabilise performance for accurate benchmarking)
+benchmark_epochs = 100      # Number of epochs to run for benchmarking (more epochs can provide a more accurate benchmark)
+benchmark_repeats = 2       # Number of times to repeat the benchmark for each device (more repeats can provide a more reliable benchmark)
 
 # Settings related to the output of the training process, including where to save trained models and plots
 [output]

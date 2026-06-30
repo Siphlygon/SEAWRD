@@ -251,6 +251,9 @@ class DeviceConfig(ConfigSection):
     mode: Literal["auto", "cpu", "gpu"] = "auto"
     benchmark_device: bool = True
     min_gpu_speedup: float = 1.2
+    warmup_epochs: int = 10
+    benchmark_epochs: int = 100
+    benchmark_repeats: int = 3
 
     def __post_init__(self):
         if self.mode not in {"auto", "cpu", "gpu"}:
@@ -259,6 +262,12 @@ class DeviceConfig(ConfigSection):
             raise ValueError("device.benchmark_device must be True when device.mode is 'auto'")
         if self.min_gpu_speedup <= 1:
             raise ValueError("device.min_gpu_speedup should be > 1")
+        if self.warmup_epochs < 0:
+            raise ValueError("device.warmup_epochs must be >= 0")
+        if self.benchmark_epochs <= 0:
+            raise ValueError("device.benchmark_epochs must be > 0")
+        if self.benchmark_repeats <= 0:
+            raise ValueError("device.benchmark_repeats must be > 0")
 
 
 @dataclass(frozen=True)

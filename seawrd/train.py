@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Any, Sequence, TYPE_CHECKING
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -23,8 +23,7 @@ from .bootstrap import load_effective_raw_config, set_device_env
 from .device_selection import choose_training_device
 from .utils import load_npz_bundle, create_validation_split, fit_normaliser, get_logger
 
-if TYPE_CHECKING:
-    from .config import SEAWRDConfig
+from .config import SEAWRDConfig
 
 # Disable TensorFlow logging to avoid cluttering the output with warnings and info messages during training
 # This will not stop error messages e.g., from not being able to find CUDA
@@ -73,11 +72,14 @@ def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
     device_config = config.get("device", {})
     device_mode = device_config.get("mode", "auto")
 
+    # If the device mode is explicitly set to "cpu" or "gpu", we can set the device environment variable accordingly
     if device_mode in {"cpu", "gpu"}:
         return set_device_env(device_mode), None
 
+    # If benchmarking is not enabled, we can default to CPU without running a benchmark
     if not device_config.get("benchmark_device", False):
-        return "auto", None
+        return set_device_env("cpu"), None
+
     logger.info("Mode is set to 'auto' and benchmarking is enabled. " 
                 "Running benchmark to select the best training device.")
 
@@ -88,15 +90,16 @@ def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
         validation_split=float(training_config["validation_split"]),
     )
 
+    device_config = config.get("device", {})
     benchmark_result = choose_training_device(
         config=config,
         x_train=x_train,
         y_train=y_train,
         x_val=x_val,
         y_val=y_val,
-        benchmark_epochs=int(training_config["num_epochs"]),
-        benchmark_repeats=int(training_config["num_models"]),
-        warmup_epochs=1,
+        benchmark_epochs=int(device_config["benchmark_epochs"]),
+        benchmark_repeats=int(device_config["benchmark_repeats"]),
+        warmup_epochs=int(device_config["warmup_epochs"]),
     )
 
     selected_device = set_device_env(benchmark_result["device"])
@@ -109,7 +112,6 @@ def run_training(config: Any,
                  test_features: np.ndarray,
                  test_labels: np.ndarray,
                  *,
-                 selected_device: str,
                  benchmark_result: dict[str, Any] | None,
                  ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any] | None]:
     """
@@ -168,6 +170,10 @@ def run_training(config: Any,
 def _build_argument_parser() -> argparse.ArgumentParser:
     """
     Build the CLI argument parser for the SEAWRD training script.
+    
+    Adds the following arguments:
+    - bundle_path: Path to a NumPy .npz bundle containing input_features, input_labels, test_features, and test_labels.
+    - --config: Optional path to a custom SEAWRD TOML configuration file for benchmarking and training.
 
     Returns
     -------
@@ -186,7 +192,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         type=Path,
-        help="Optional path to a custom SEAWRD TOML configuration file.",
+        help="Optional path to a custom SEAWRD TOML configuration file for benchmarking and training.",
     )
     return parser
 
@@ -204,8 +210,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_argument_parser()
     args = parser.parse_args(argv)
 
-    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-
     default_config_path = Path(__file__).with_name("seawrd_default.toml")
     if args.config is not None:
         effective_raw_config = load_effective_raw_config(args.config, default_config_path)
@@ -214,6 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         with default_config_path.open("rb") as handle:
             effective_raw_config = tomllib.load(handle)
         logger.info("Loaded default configuration from %s.", default_config_path)
+
     bundle = load_npz_bundle(args.bundle_path)
     logger.info("Loaded data bundle from %s.", args.bundle_path)
 
@@ -224,11 +229,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         input_labels=bundle["input_labels"],
     )
     logger.info("Selected training device: %s.", selected_device)
-    if benchmark_result is not None:
-        logger.info("Benchmark reason: %s", benchmark_result["reason"])
-
-    os.environ.setdefault("KERAS_BACKEND", "tensorflow")
-    from .config import SEAWRDConfig
 
     config = SEAWRDConfig.from_dict(effective_raw_config)
 
@@ -239,7 +239,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         input_labels=bundle["input_labels"],
         test_features=bundle["test_features"],
         test_labels=bundle["test_labels"],
-        selected_device=selected_device,
         benchmark_result=benchmark_result,
     )
 
