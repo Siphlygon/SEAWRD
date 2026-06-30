@@ -1,7 +1,7 @@
-Model
-=====
+Configuration
+=============
 
-.. automodule:: model
+.. automodule:: config
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,7 +1,7 @@
-Model
-=====
+Trainer
+=======
 
-.. automodule:: model
+.. automodule:: trainer
    :members:
    :undoc-members:
    :show-inheritance:
