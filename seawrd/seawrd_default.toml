@@ -42,7 +42,7 @@ early_stopping_patience = 50            # Number of epochs with no improvement a
 # Settings related to the device (CPU or GPU) used for training and inference
 [device]
 mode = "auto"               # Whether to use CPU, GPU, or automatically select the best available device ("cpu", "gpu", or "auto")
-benchmark_device = false    # Whether to benchmark the device performance before training (can help in selecting the best device)
+benchmark_device = true     # Whether to benchmark the device performance before training (can help in selecting the best device)
 min_gpu_speedup = 1.2       # Minimum speedup factor required to use GPU over CPU (if using "auto" mode)
 
 # Settings related to the output of the training process, including where to save trained models and plots

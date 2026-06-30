@@ -21,10 +21,24 @@ except ModuleNotFoundError:  # Python 3.10 fallback
 
 from .bootstrap import load_effective_raw_config, set_device_env
 from .device_selection import choose_training_device
-from .utils import load_npz_bundle, create_validation_split, fit_normaliser
+from .utils import load_npz_bundle, create_validation_split, fit_normaliser, get_logger
 
 if TYPE_CHECKING:
     from .config import SEAWRDConfig
+
+# Disable TensorFlow logging to avoid cluttering the output with warnings and info messages during training
+# This will not stop error messages e.g., from not being able to find CUDA
+import absl.logging
+absl.logging.set_verbosity(absl.logging.ERROR)
+absl.logging.set_stderrthreshold(absl.logging.ERROR)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+# Also set up back-end for keras for later
+os.environ["KERAS_BACKEND"] = "tensorflow"
+
+# Set up logging configuration for the training script
+logger = get_logger("seawrd.train")
 
 
 
@@ -64,6 +78,8 @@ def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
 
     if not device_config.get("benchmark_device", False):
         return "auto", None
+    logger.info("Mode is set to 'auto' and benchmarking is enabled. " 
+                "Running benchmark to select the best training device.")
 
     training_config = config.get("training", {})
     x_train, y_train, x_val, y_val = create_validation_split(
@@ -127,7 +143,6 @@ def run_training(config: Any,
     test_labels = np.asarray(test_labels, dtype=np.float32).reshape(-1)
 
     # Only now do we import keras by importing model or trainer
-    os.environ.setdefault("KERAS_BACKEND", "tensorflow")
     from .model import DNNManager
     from .trainer import DNNTrainer
 
@@ -146,10 +161,6 @@ def run_training(config: Any,
         test_features=test_features,
         test_labels=test_labels,
     )
-
-    print(f"Selected device: {selected_device}")
-    if benchmark_result is not None:
-        print(f"Benchmark reason: {benchmark_result['reason']}")
 
     return (*results, benchmark_result)
 
@@ -193,25 +204,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_argument_parser()
     args = parser.parse_args(argv)
 
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
     default_config_path = Path(__file__).with_name("seawrd_default.toml")
     if args.config is not None:
         effective_raw_config = load_effective_raw_config(args.config, default_config_path)
+        logger.info("Loaded custom configuration from %s.", args.config)
     else:
         with default_config_path.open("rb") as handle:
-                effective_raw_config = tomllib.load(handle)
+            effective_raw_config = tomllib.load(handle)
+        logger.info("Loaded default configuration from %s.", default_config_path)
     bundle = load_npz_bundle(args.bundle_path)
+    logger.info("Loaded data bundle from %s.", args.bundle_path)
 
+    logger.info("Selecting training device based on configuration and benchmark results.")
     selected_device, benchmark_result = _select_device(
         config=effective_raw_config,
         input_features=bundle["input_features"],
         input_labels=bundle["input_labels"],
     )
+    logger.info("Selected training device: %s.", selected_device)
+    if benchmark_result is not None:
+        logger.info("Benchmark reason: %s", benchmark_result["reason"])
 
     os.environ.setdefault("KERAS_BACKEND", "tensorflow")
-
     from .config import SEAWRDConfig
 
     config = SEAWRDConfig.from_dict(effective_raw_config)
+
+    logger.info("Starting training.")
     run_training(
         config=config,
         input_features=bundle["input_features"],
