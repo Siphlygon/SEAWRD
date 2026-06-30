@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .config import SEAWRDConfig
 
 from .utils import get_logger
+from .bootstrap import set_device_env
 
 logger = get_logger("seawrd.device_selection")
 
@@ -165,7 +166,6 @@ def choose_training_device(config: SEAWRDConfig,
     }
 
 
-
 def _run_worker(mode: str, worker_config_path: Path) -> dict[str, Any]:
     """
     Run a benchmark worker process for the specified device mode (CPU or GPU) and return the benchmark results.
@@ -192,12 +192,7 @@ def _run_worker(mode: str, worker_config_path: Path) -> dict[str, Any]:
     env = os.environ.copy()
 
     # by setting CUDA_VISIBLE_DEVICES, we can control whether to use the GPU or not in the worker process.
-    if mode == "cpu":
-        env["CUDA_VISIBLE_DEVICES"] = ""
-    elif mode == "gpu":
-        env["CUDA_VISIBLE_DEVICES"] = "0"
-    else:
-        raise ValueError(f"Unknown benchmark mode: {mode!r}")
+    set_device_env(mode)
 
     # Run the benchmark worker process as a subprocess, passing the worker configuration file path as an argument.
     # Capture the output and check for errors.

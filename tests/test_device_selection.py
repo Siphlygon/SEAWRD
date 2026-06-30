@@ -4,9 +4,11 @@ Unit tests for the device selection benchmark helpers.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import numpy as np
+import pytest
 
 from seawrd import device_selection
 from seawrd.config import SEAWRDConfig
@@ -48,9 +50,9 @@ def test_choose_training_device_uses_worker_gpu_flag(monkeypatch : Any):
         warmup_epochs=1,
     )
 
-    assert calls == ["cpu", "gpu"]
-    assert result["device"] == "cpu"
-    assert "GPU" in result["reason"]
+    assert calls == ["gpu"]  # so there is not a cpu call, as the gpu is not detected and cpu must be used
+    assert result["device"] == "cpu"  # final choice should be cpu
+    assert "not detect a GPU" in result["reason"]  # reason should mention GPU not detected
 
 
 def test_choose_training_device_selects_gpu_when_fast_enough(monkeypatch : Any):
@@ -125,42 +127,6 @@ def test_choose_training_device_selects_cpu_when_gpu_not_fast_enough(monkeypatch
     assert "below the" in result["reason"]
 
 
-
-def test_choose_training_device_selects_cpu_when_gpu_not_detected(monkeypatch : Any):
-    """
-    Test that the choose_training_device function selects CPU when GPU is not detected by the worker process.
-
-    Parameters
-    ----------
-    monkeypatch : Any
-        The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
-        for testing purposes.
-    """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.5}})
-
-    # Define a fake _run_worker function that simulates the behavior of the worker process for CPU and GPU benchmarking.
-    def fake_run_worker(mode: str, worker_config_path):
-        if mode == "cpu":
-            return {"median_seconds": 2.0}
-        return {"median_seconds": 1.0, "gpu_detected": False}
-
-    monkeypatch.setattr(device_selection, "_run_worker", fake_run_worker)
-
-    result = device_selection.choose_training_device(
-        config=cfg,
-        x_train=np.zeros((4, 2), dtype=np.float32),
-        y_train=np.zeros((4,), dtype=np.float32),
-        x_val=np.zeros((2, 2), dtype=np.float32),
-        y_val=np.zeros((2,), dtype=np.float32),
-        benchmark_epochs=1,
-        benchmark_repeats=1,
-        warmup_epochs=1,
-    )
-
-    assert result["device"] == "cpu"
-    assert "did not detect a GPU" in result["reason"]
-
-
 def test_choose_training_device_selects_cpu_when_gpu_benchmark_fails(monkeypatch : Any):
     """
     Test that the choose_training_device function selects CPU when the GPU benchmark fails (raises an exception).
@@ -194,41 +160,6 @@ def test_choose_training_device_selects_cpu_when_gpu_benchmark_fails(monkeypatch
 
     assert result["device"] == "cpu"
     assert "GPU benchmark failed" in result["reason"]
-
-
-def test_choose_training_device_selects_cpu_when_gpu_benchmark_raises_exception(monkeypatch : Any):
-    """
-    Test that the choose_training_device function selects CPU when the GPU benchmark raises an exception.
-
-    Parameters
-    ----------
-    monkeypatch : Any
-        The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
-        for testing purposes.
-    """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.5}})
-
-    # Define a fake _run_worker function that simulates the behavior of the worker process for CPU and GPU benchmarking.
-    def fake_run_worker(mode: str, worker_config_path):
-        if mode == "cpu":
-            return {"median_seconds": 2.0}
-        raise RuntimeError("GPU benchmark raised an exception")
-
-    monkeypatch.setattr(device_selection, "_run_worker", fake_run_worker)
-
-    result = device_selection.choose_training_device(
-        config=cfg,
-        x_train=np.zeros((4, 2), dtype=np.float32),
-        y_train=np.zeros((4,), dtype=np.float32),
-        x_val=np.zeros((2, 2), dtype=np.float32),
-        y_val=np.zeros((2,), dtype=np.float32),
-        benchmark_epochs=1,
-        benchmark_repeats=1,
-        warmup_epochs=1,
-    )
-
-    assert result["device"] == "cpu"
-    assert "GPU benchmark raised an exception" in result["reason"]
 
 
 def test_selection_reads_correct_json(monkeypatch : Any):
@@ -268,7 +199,7 @@ def test_selection_reads_correct_json(monkeypatch : Any):
         warmup_epochs=1,
     )
 
-    assert calls == ["cpu", "gpu"]
+    assert calls == ["gpu", "cpu"]
 
 
 def test_correct_worker_config_written(monkeypatch : Any):
@@ -293,10 +224,9 @@ def test_correct_worker_config_written(monkeypatch : Any):
             config_data = json.load(f)
         assert "data_path" in config_data
         assert "seawrd_config" in config_data
-        assert "benchmark_epochs" in config_data
-        assert "benchmark_repeats" in config_data
-        assert "warmup_epochs" in config_data
-        print(f"Worker config for {mode}: {config_data}")
+        assert config_data["benchmark_epochs"] == 2
+        assert config_data["benchmark_repeats"] == 2
+        assert config_data["warmup_epochs"] == 2
         return {"median_seconds": 1.0, "gpu_detected": True}
 
     monkeypatch.setattr(device_selection, "_run_worker", fake_run_worker)
@@ -307,9 +237,41 @@ def test_correct_worker_config_written(monkeypatch : Any):
         y_train=np.zeros((4,), dtype=np.float32),
         x_val=np.zeros((2, 2), dtype=np.float32),
         y_val=np.zeros((2,), dtype=np.float32),
-        benchmark_epochs=1,
-        benchmark_repeats=1,
-        warmup_epochs=1,
+        benchmark_epochs=2,
+        benchmark_repeats=2,
+        warmup_epochs=2,
     )
 
-    assert calls == ["cpu", "gpu"]
+    assert calls == ["gpu", "cpu"]
+
+
+def test_correct_environment_variable_set_by_mode(monkeypatch : Any):
+    """
+    Test that the set_device_env function called within _run_worker correctly sets the CUDA_VISIBLE_DEVICES environment
+    variable based on the specified device mode.
+
+    Parameters
+    ----------
+    monkeypatch : Any
+        The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the os.environ for testing
+        purposes.
+    """
+    # Save the original environment variable to restore it later
+    original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+
+    # Test for CPU mode
+    device_selection.set_device_env("cpu")
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == ""
+
+    # Test for GPU mode
+    device_selection.set_device_env("gpu")
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"
+
+    with pytest.raises(ValueError):
+        device_selection.set_device_env("invalid_mode")
+
+    # Restore the original environment variable
+    if original_cuda_visible_devices is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
+    else:
+        del os.environ["CUDA_VISIBLE_DEVICES"]

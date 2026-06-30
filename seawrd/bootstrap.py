@@ -1,4 +1,6 @@
-"""Shared bootstrap helpers for SEAWRD entrypoints."""
+"""
+hared bootstrap helpers for SEAWRD entrypoints.
+"""
 
 from __future__ import annotations
 
@@ -66,7 +68,8 @@ def load_effective_raw_config(config_path: Path, default_config_path: Path) -> d
 
 
 def set_device_env(device_mode: str) -> str:
-    """Set CUDA visibility for the selected training device.
+    """
+    Set CUDA visibility for the selected training device.
 
     Parameters
     ----------
@@ -82,4 +85,6 @@ def set_device_env(device_mode: str) -> str:
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
     elif device_mode == "gpu":
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    else:
+        raise ValueError(f"Unknown device mode: {device_mode!r}")
     return device_mode
