@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
-
-import pandas as pd
-import numpy as np
+os.environ.setdefault("KERAS_BACKEND", "tensorflow")
 from typing import TYPE_CHECKING
+
+import numpy as np
+import pandas as pd
 
 if TYPE_CHECKING:
     import keras
@@ -46,14 +47,14 @@ def validate_keras_field(field_name: str, field_type: str):
         raise ValueError(f"Unknown or unsupported Keras {field_type}: {field_name!r}") from exc
 
 
-def fit_normaliser(self, train_features: pd.DataFrame) -> keras.layers.Normalization:
+def fit_normaliser(train_features: pd.DataFrame | np.ndarray) -> "keras.layers.Normalization":
     """
     Fit a Keras Normalization layer to the training features.
 
     Parameters
     ----------
-    train_features : pd.DataFrame
-        Training feature pandas DataFrame to fit the normalizer.
+    train_features : pd.DataFrame | np.ndarray
+        Training feature pandas DataFrame or numpy array to fit the normalizer.
 
     Returns
     -------
@@ -61,8 +62,12 @@ def fit_normaliser(self, train_features: pd.DataFrame) -> keras.layers.Normaliza
         Fitted Keras Normalization layer.
     """
     import keras  # use a local import to avoid unnecessary dependencies when importing the package
-    
+
     normaliser = keras.layers.Normalization(axis=-1, name="feature_normaliser")
-    normaliser.adapt(train_features.to_numpy(dtype=np.float32))
-    self.normaliser = normaliser
+    if isinstance(train_features, pd.DataFrame):
+        values = train_features.to_numpy(dtype=np.float32)
+    else:
+        values = np.asarray(train_features, dtype=np.float32)
+
+    normaliser.adapt(values)
     return normaliser

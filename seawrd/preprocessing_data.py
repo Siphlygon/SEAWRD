@@ -283,7 +283,11 @@ class DataPreprocessor:
             Testing labels as a pandas Series or NumPy array.
         """
         train_features, test_features, train_labels, test_labels = self.split()
-        normaliser = fit_normaliser(self, train_features) if self.normalise else None
+        if self.normalise:
+            normaliser = fit_normaliser(train_features)
+            self.normaliser = normaliser
+        else:
+            normaliser = None
 
         if return_array:
             return (
@@ -372,7 +376,7 @@ if __name__ == "__main__":
     print("\nTest Labels:")
     print(test_labels)
 
-    normaliser = fit_normaliser(preprocessor, train_features)
+    normaliser = fit_normaliser(train_features)
     print("\nFitted Normaliser Mean:")
     print(normaliser.mean.numpy())
 

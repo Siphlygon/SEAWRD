@@ -95,7 +95,7 @@ def create_minimal_dataset(n_samples: int = 64, random_state: int = 123) \
         label="R_p",
         test_size=0.25,
         random_state=123,
-        normalize=True,
+        normalise=True,
     )
 
     normaliser, x_train, x_test, y_train, y_test = preprocessor.get_training_data(
