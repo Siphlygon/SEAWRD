@@ -276,6 +276,8 @@ class OutputConfig(ConfigSection):
     Configuration for output settings, including model saving and plot generation.
     """
     model_dir: str = "models/"
+    cache_dir: str = "cache/"
+    use_cache: bool = True
     version: int = 1
     save_model: bool = True
     save_plots: bool = True

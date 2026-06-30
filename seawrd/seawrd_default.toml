@@ -48,9 +48,11 @@ warmup_epochs = 10          # Number of warmup epochs to run before benchmarking
 benchmark_epochs = 100      # Number of epochs to run for benchmarking (more epochs can provide a more accurate benchmark)
 benchmark_repeats = 2       # Number of times to repeat the benchmark for each device (more repeats can provide a more reliable benchmark)
 
-# Settings related to the output of the training process, including where to save trained models and plots
+# Settings related to the output of the program, including where to save trained models and plots, and whether to use cached benchmark results
 [output]
 model_dir = "models/"   # Directory to save trained models
+cache_dir = "cache/"    # Directory to save cached benchmarks for deciding which device to use
+use_cache = true        # Whether to save and use cached benchmark results to avoid re-benchmarking (recommended for faster training)
 version = 1             # Version number of the model (can be used for versioning and tracking different model configurations)
 save_model = true       # Whether to save the trained model after training (recommended for later use)
 save_plots = true       # Whether to save training and validation plots (recommended for visualising model performance)
