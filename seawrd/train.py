@@ -197,6 +197,36 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def load_files_from_args(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    """
+    Load the configuration and data bundle from the command-line arguments.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        The parsed command-line arguments.
+
+    Returns
+    -------
+    tuple[dict[str, Any], dict[str, np.ndarray]]
+        The loaded configuration dictionary and data bundle.
+    """
+    default_config_path = Path(__file__).with_name("seawrd_default.toml")
+    if args.config is not None:
+        effective_raw_config = load_effective_raw_config(args.config, default_config_path)
+        logger.info("Loaded custom configuration from %s.", args.config)
+    else:
+        with default_config_path.open("rb") as handle:
+            effective_raw_config = tomllib.load(handle)
+        logger.info("Loaded default configuration from %s.", default_config_path)
+
+    bundle = load_npz_bundle(args.bundle_path)
+    logger.info("Loaded data bundle from %s.", args.bundle_path)
+
+    return effective_raw_config, bundle
+
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """
     CLI entrypoint for the SEAWRD training script. This function handles command-line arguments, loads the configuration
@@ -210,27 +240,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_argument_parser()
     args = parser.parse_args(argv)
 
-    default_config_path = Path(__file__).with_name("seawrd_default.toml")
-    if args.config is not None:
-        effective_raw_config = load_effective_raw_config(args.config, default_config_path)
-        logger.info("Loaded custom configuration from %s.", args.config)
-    else:
-        with default_config_path.open("rb") as handle:
-            effective_raw_config = tomllib.load(handle)
-        logger.info("Loaded default configuration from %s.", default_config_path)
-
-    bundle = load_npz_bundle(args.bundle_path)
-    logger.info("Loaded data bundle from %s.", args.bundle_path)
+    raw_cfg, bundle = load_files_from_args(args)
 
     logger.info("Selecting training device based on configuration and benchmark results.")
     selected_device, benchmark_result = _select_device(
-        config=effective_raw_config,
+        config=raw_cfg,
         input_features=bundle["input_features"],
         input_labels=bundle["input_labels"],
     )
     logger.info("Selected training device: %s.", selected_device)
 
-    config = SEAWRDConfig.from_dict(effective_raw_config)
+    config = SEAWRDConfig.from_dict(raw_cfg)
 
     logger.info("Starting training.")
     run_training(
