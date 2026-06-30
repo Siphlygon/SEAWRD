@@ -1,4 +1,4 @@
-<p align="center"><img src="seawrd.jpg" alt="orbitize!" width="100"/></p>
+<p align="center"><img src="seawrd.jpg" alt="seawrd" width="100"/></p>
 
 # SEAWRD
 **S**urrogate **E**mulator for **A**quatic **W**orld **R**adius **D**etermination - "sea-ward"
@@ -6,6 +6,7 @@
 Surrogate model creator for predicting the radius of irradiated ocean worlds. For installation instructions, tutorials, and detailed documentation, start [here](http://seawrd.readthedocs.io).
 
 ![Build Status](https://github.com/Siphlygon/SEAWRD/actions/workflows/python-package.yml/badge.svg)
+[![Coverage Status](https://coveralls.io/repos/github/Siphlygon/SEAWRD/badge.svg?branch=main)](https://coveralls.io/github/Siphlygon/SEAWRD?branch=main)
 [![Documentation Status](https://readthedocs.org/projects/SEAWRD/badge/?version=latest)](http://seawrd.readthedocs.io/en/latest/?badge=latest)
 ![PyPI - Version](https://img.shields.io/pypi/v/seawrd)
 [![A rectangular badge, half black half purple containing the text made at Code Astro](https://img.shields.io/badge/Made%20at-Code/Astro-blueviolet.svg)](https://semaphorep.github.io/codeastro/)

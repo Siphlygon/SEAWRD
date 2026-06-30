@@ -4,12 +4,12 @@ from pathlib import Path
 from dataclasses import replace
 from typing import Any
 
-from config import SEAWRDConfig, ModelConfig, TrainingConfig, CompileConfig, CallbackConfig, DeviceConfig, OutputConfig
-
 try:
     import tomllib  # Python 3.11+, tomlib is part of the standard library
 except ModuleNotFoundError:
     import tomli as tomllib  # Python <=3.10 fallback, will require the `tomli` package to be installed
+
+from .config import SEAWRDConfig, ModelConfig, TrainingConfig, CompileConfig, CallbackConfig, DeviceConfig, OutputConfig
 
 
 class ConfigManager:
@@ -70,14 +70,7 @@ class ConfigManager:
         SEAWRDConfig
             An instance of the SEAWRDConfig dataclass initialized with the provided configuration.
         """
-        return SEAWRDConfig(
-            model=ModelConfig(**raw.get("model", {})),
-            training=TrainingConfig(**raw.get("training", {})),
-            compile=CompileConfig(**raw.get("compile", {})),
-            callbacks=CallbackConfig(**raw.get("callbacks", {})),
-            device=DeviceConfig(**raw.get("device", {})),
-            output=OutputConfig(**raw.get("output", {})),
-        )
+        return SEAWRDConfig.from_dict(raw)
 
 
     def to_dict(self) -> dict[str, Any]:

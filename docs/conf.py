@@ -1,6 +1,9 @@
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../seawrd'))
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -11,10 +14,10 @@ sys.path.insert(0, os.path.abspath('../seawrd'))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'SEAWRD'
-copyright = '2026, Ashley Parr, Bishwash Devkota, Fredi Quispe Huaynasi, Ian Rain-water'
-author = 'Ashley Parr, Bishwash Devkota, Fredi Quispe Huaynasi, Ian Rain-water'
+copyright = '2026, Ashley Parr, Bishwash Devkota, Fredi Quispe Huaynasi, Ian Rain-Water'
+author = 'Ashley Parr, Bishwash Devkota, Fredi Quispe Huaynasi, Ian Rain-Water'
 root_doc = 'index'
-release = '0.1.0'
+release = '0.4.0'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

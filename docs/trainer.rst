@@ -1,7 +1,7 @@
-Model
-=====
+Trainer
+=======
 
-.. automodule:: seawrd.model
+.. automodule:: seawrd.trainer
    :members:
    :undoc-members:
    :show-inheritance:

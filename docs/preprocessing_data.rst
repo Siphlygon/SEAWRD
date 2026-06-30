@@ -1,11 +1,7 @@
-Preprocessing data
+Preprocessing Data
 ==================
 
-Here is the preprocessing data part
-
-Cleaning data 
--------------
-.. automodule:: preprocessing_data
+.. automodule:: seawrd.preprocessing_data
    :members:
    :undoc-members:
    :show-inheritance:
