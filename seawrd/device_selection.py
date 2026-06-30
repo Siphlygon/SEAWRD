@@ -5,12 +5,14 @@ device along with the benchmark results.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
 
@@ -19,7 +21,13 @@ import numpy as np
 if TYPE_CHECKING:
     from .config import SEAWRDConfig
 
-from .bootstrap import set_device_env
+from .bootstrap import (
+    config_to_worker_payload,
+    get_min_gpu_speedup,
+    set_device_env,
+    get_cpu_name,
+    get_gpu_names,
+)
 from .utils import get_logger
 
 logger = get_logger("seawrd.device_selection")
@@ -141,6 +149,22 @@ class DeviceChoice:
             gpu_result=gpu_result,
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert the DeviceChoice instance into a dictionary.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary representation of the DeviceChoice instance, suitable for JSON serialisation.
+        """
+        return {
+            "device": self.device,
+            "reason": self.reason,
+            "cpu_result": self.cpu_result.to_dict() if self.cpu_result else None,
+            "gpu_result": self.gpu_result.to_dict() if self.gpu_result else None,
+        }
+
 
 @dataclass(frozen=True)
 class BenchmarkWorkerConfig:
@@ -190,7 +214,7 @@ class BenchmarkWorkerConfig:
         """
         return cls(
             data_path=str(data_path),
-            seawrd_config=_config_to_worker_payload(config),
+            seawrd_config=config_to_worker_payload(config),
             benchmark_epochs=benchmark_epochs,
             benchmark_repeats=benchmark_repeats,
             warmup_epochs=warmup_epochs,
@@ -237,136 +261,205 @@ class BenchmarkWorkerConfig:
         }
 
 
-
-def choose_training_device(config: SEAWRDConfig | Mapping[str, Any],
-                           x_train: np.ndarray,
-                           y_train: np.ndarray,
-                           x_val: np.ndarray,
-                           y_val: np.ndarray,
-                           benchmark_epochs: int = 10,
-                           benchmark_repeats: int = 3,
-                           warmup_epochs: int = 10) -> DeviceChoice:
+@dataclass(frozen=True)
+class BenchmarkCache:
     """
-    Benchmark CPU and GPU in isolated subprocesses and choose a backend for training based on the results.
+    A dataclass to hold the cached benchmark results for CPU and GPU.
     
+    It contains the benchmark results for both CPU and GPU, allowing for quick access to previously computed results
+    without the need to rerun the benchmarks. This class is used to encapsulate the cached benchmark results, providing
+    a structured way to access the results for both devices.
+    """
+    # Configuration
+    seawrd_config: dict[str, Any]
+    num_inputs : int
+    num_outputs : int
+
+    # Device information
+    tensorflow_version: str
+    keras_version: str
+    gpu_names: tuple[str, ...]
+    cpu_name: str
+
+    # Cached benchmark results
+    device_choice: DeviceChoice
+
+    def to_overhead(self) -> dict[str, Any]:
+        """
+        Convert the BenchmarkCache instance into a dictionary suitable for generating a cache key. This does not contain
+        the benchmark results themselves, but only the configuration and device information necessary to uniquely
+        identify the cache entry.
+        
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary representation of the BenchmarkCache instance, containing only the configuration and device
+            information necessary for generating a unique cache key.
+        """
+        return {
+            "seawrd_config": self.seawrd_config,
+            "num_inputs": self.num_inputs,
+            "num_outputs": self.num_outputs,
+            "tensorflow_version": self.tensorflow_version,
+            "keras_version": self.keras_version,
+            "gpu_names": list(self.gpu_names),
+            "cpu_name": self.cpu_name,
+        }
+
+
+
+def _cache_key(overhead : dict[str, Any]) -> str:
+    """
+    Generate a unique cache key based on the provided cache overhead. The cache key is a JSON string representation of
+    the overhead, sorted by keys to ensure consistency. This allows for easy comparison and retrieval of cached
+    benchmark results based on the configuration used for training and the device information.
+
     Parameters
     ----------
-    config : SEAWRDConfig | Mapping[str, Any]
-        A SEAWRDConfig object or raw mapping containing the configuration for the model and training.
-    x_train : np.ndarray
-        The training input data.
-    y_train : np.ndarray
-        The training target data.
-    x_val : np.ndarray
-        The validation input data.
-    y_val : np.ndarray
-        The validation target data.
-    benchmark_epochs : int, optional
-        The number of epochs to train the model during benchmarking. Default is 10. 
-    benchmark_repeats : int, optional
-        The number of times to repeat the benchmark for each device. Default is 3.
-    warmup_epochs : int, optional
-        The number of warmup epochs to run before benchmarking. Default is 10.
+    overhead : dict[str, Any]
+        A dictionary containing the cache overhead (configuration and device information) for which to generate a cache
+        key.
 
     Returns
     -------
-    dict[str, Any]
-        A dictionary containing the selected device, the reason for the selection, and the benchmark results for both
-        CPU and GPU.
+    str
+        A unique cache key based on the cache overhead.
     """
-    x_train = np.asarray(x_train, dtype=np.float32)
-    y_train = np.asarray(y_train, dtype=np.float32).reshape(-1)
-    x_val = np.asarray(x_val, dtype=np.float32)
-    y_val = np.asarray(y_val, dtype=np.float32).reshape(-1)
+    encoded = json.dumps(overhead, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16] # Use the first 16 characters of the SHA256 hash as the cache key
 
-    # Use a temporary directory to store the benchmark data and configuration for the worker processes
-    with tempfile.TemporaryDirectory() as tmpdir:
-        logger.debug("Using temporary directory for benchmarking: %s", tmpdir)
-        tmpdir = Path(tmpdir)
-        data_path = tmpdir / "benchmark_data.npz"
-        worker_config_path = tmpdir / "worker_config.json"
 
-        # Save the training and validation data to a .npz file for the worker processes to load
-        np.savez(
-            data_path,
-            input_features=x_train,
-            input_labels=y_train,
-            test_features=x_val,
-            test_labels=y_val,
-        )
+def _create_benchmark_cache(config : Mapping[str, Any],
+                            num_inputs: int,
+                            num_outputs: int,
+                            device_choice: DeviceChoice) -> BenchmarkCache:
+    """
+    Create a BenchmarkCache instance from the provided configuration, number of inputs and outputs, and device choice.
 
-        # Create a worker configuration dictionary containing the paths to the data and the SEAWRD configuration, as
-        # well as the benchmark parameters
-        worker_config = BenchmarkWorkerConfig.from_config(
-            config=config,
-            data_path=data_path,
-            benchmark_epochs=benchmark_epochs,
-            benchmark_repeats=benchmark_repeats,
-            warmup_epochs=warmup_epochs,
-        )
-        worker_config_dict = worker_config.to_dict()
-        logger.debug("Creating worker configuration: %s", worker_config_dict)
-        worker_config_path.write_text(json.dumps(worker_config_dict))
+    Parameters
+    ----------
+    config : Mapping[str, Any]
+        A raw mapping containing the configuration for the model and training.
+    num_inputs : int
+        The number of input features for the model.
+    num_outputs : int
+        The number of output features for the model.
+    device_choice : DeviceChoice
+        The selected device and benchmark results.
 
-        # Run GPU benchmark first as it can fail if there is issues detecting GPU
-        try:
-            gpu_result = _run_worker("gpu", worker_config_path)
-        except Exception as exc:
-            logger.warning("GPU benchmark failed: %s", exc)
-            return DeviceChoice(
-                device="cpu",
-                reason=f"GPU benchmark failed: {exc}",
-                cpu_result=None,
-                gpu_result=None
-            )
-
-        # Check if a GPU was detected in the GPU benchmark result. If not, we fall back to CPU.
-        # note: done this way to avoid instantiating tensorflow outside of the subprocess
-        gpu_detected = bool(gpu_result.gpu_detected)
-        if not gpu_detected:
-            logger.warning("GPU benchmark did not detect a GPU. Falling back to CPU.")
-            return DeviceChoice(
-                device="cpu",
-                reason="CPU selected because TensorFlow did not detect a GPU inside the GPU benchmark process.",
-                cpu_result=None,
-                gpu_result=gpu_result
-            )
-
-        # Otherwise, now benchmark the CPU.
-        cpu_result = _run_worker("cpu", worker_config_path)
-
-    # Compare the median training times for CPU and GPU to determine which device to use for training. If the GPU is
-    # faster than the CPU by at least the minimum speedup specified in the configuration, we select the GPU. Otherwise,
-    # we fall back to CPU.
-    cpu_time = cpu_result.median_seconds
-    gpu_time = gpu_result.median_seconds
-    speedup = cpu_time / gpu_time
-    min_gpu_speedup = _get_min_gpu_speedup(config)
-
-    if speedup >= min_gpu_speedup:
-        logger.info("GPU selected for training: GPU was %.2fx faster than CPU, "
-                    "exceeding the %.2fx minimum speedup threshold.", speedup, min_gpu_speedup)
-        return DeviceChoice(
-            device="gpu",
-            reason=(f"GPU selected because it was {speedup:.2f}x faster than CPU, "
-                    f"exceeding the {min_gpu_speedup:.2f}x minimum speedup threshold."),
-            cpu_result=cpu_result,
-            gpu_result=gpu_result
-        )
-
-    logger.info(
-        "CPU selected for training: GPU was only %.2fx the speed of CPU, below the %.2fx minimum speedup threshold.",
-        speedup, min_gpu_speedup,
+    Returns
+    -------
+    BenchmarkCache
+        An instance of BenchmarkCache populated with the provided parameters.
+    """
+    return BenchmarkCache(
+        seawrd_config=config_to_worker_payload(config),
+        num_inputs=num_inputs,
+        num_outputs=num_outputs,
+        tensorflow_version=version("tensorflow"),
+        keras_version=version("keras"),
+        gpu_names=tuple(get_gpu_names()),
+        cpu_name=get_cpu_name(),
+        device_choice=device_choice,
     )
-    return DeviceChoice(
-        device="cpu",
-        reason=(
-            f"CPU selected because GPU speedup was only {speedup:.2f}x below the {min_gpu_speedup:.2f}x threshold."
+
+
+def _save_to_cache(config : Mapping[str, Any],
+                   num_inputs: int,
+                   num_outputs: int,
+                   device_choice: DeviceChoice) -> None:
+    """
+    Save the benchmark cache to a JSON file in the specified cache directory. The cache file is named based on a unique
+    cache key generated from the cache overhead.
+
+    Parameters
+    ----------
+    config : Mapping[str, Any]
+        A raw mapping containing the configuration for the model and training.
+    num_inputs : int
+        The number of input features for the model.
+    num_outputs : int
+        The number of output features for the model.
+    device_choice : DeviceChoice
+        The selected device and benchmark results.
+
+    Raises
+    ------
+    OSError
+        If there is an error creating the cache directory or writing the cache file.
+    """
+    cache_dir = Path(config["output"]["cache_dir"])
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create a BenchmarkCache instance to generate the cache overhead and key
+    cache = _create_benchmark_cache(
+        config=config,
+        num_inputs=num_inputs,
+        num_outputs=num_outputs,
+        device_choice=device_choice,
+    )
+    overhead = cache.to_overhead()
+    cache_key = _cache_key(overhead)
+    
+    # Save the cache to a JSON file named based on the cache key in the specified cache directory
+    cache_path = cache_dir / f"benchmark_{cache_key}.json"
+    logger.info("Saving benchmark results to cache: %s", cache_path)
+    with open(cache_path, "w") as f:
+        json.dump({
+            "overhead": overhead,
+            "device_choice": cache.device_choice.to_dict(),
+        }, f, indent=4)
+
+
+def _load_from_cache(config : Mapping[str, Any],
+                     num_inputs: int,
+                     num_outputs: int) -> DeviceChoice | None:
+    """
+    Load the benchmark cache from a JSON file in the specified cache directory. The cache file is named based on a
+    unique cache key generated from the cache overhead. If the cache file exists, it is loaded and the DeviceChoice is
+    returned. If the cache file does not exist, None is returned.
+
+    Parameters
+    ----------
+    config : Mapping[str, Any]
+        A raw mapping containing the configuration for the model and training.
+    num_inputs : int
+        The number of input features for the model.
+    num_outputs : int
+        The number of output features for the model.
+
+    Returns
+    -------
+    DeviceChoice | None
+        The loaded device choice or None if no cache is available.
+    """
+    cache_dir = Path(config["output"]["cache_dir"])
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create a cache overhead dictionary containing the configuration and device information necessary to generate
+    # a unique cache key.
+    benchmark_cache = _create_benchmark_cache(
+        config=config,
+        num_inputs=num_inputs,
+        num_outputs=num_outputs,
+        device_choice=DeviceChoice(
+            device="unknown",
+            reason="Cache overhead only; no benchmark results yet.",
+            cpu_result=None,
+            gpu_result=None,
         ),
-        cpu_result=cpu_result,
-        gpu_result=gpu_result,
     )
+    cache_overhead = benchmark_cache.to_overhead()
+    cache_key = _cache_key(cache_overhead)
+    cache_path = cache_dir / f"benchmark_{cache_key}.json"
 
+    # Only load the cache if the cache file exists. If it does not exist, return None to indicate that no cached
+    # benchmark results are available.
+    if cache_path.exists():
+        logger.info("Loading benchmark results from cache: %s", cache_path)
+        cached_data = json.loads(cache_path.read_text())
+        return DeviceChoice.from_dict(cached_data["device_choice"])
+    return None
 
 def _run_worker(mode: str, worker_config_path: Path) -> DeviceBenchmarkResult:
     """
@@ -433,66 +526,165 @@ def _run_worker(mode: str, worker_config_path: Path) -> DeviceBenchmarkResult:
     return DeviceBenchmarkResult.from_dict(json.loads(lines[-1]))
 
 
-def _config_to_worker_payload(config: SEAWRDConfig | dict[str, Any] | Any) -> dict[str, Any]:
+def choose_training_device(config: Mapping[str, Any],
+                           x_train: np.ndarray,
+                           y_train: np.ndarray,
+                           x_val: np.ndarray,
+                           y_val: np.ndarray,
+                           benchmark_epochs: int = 10,
+                           benchmark_repeats: int = 3,
+                           warmup_epochs: int = 10) -> DeviceChoice:
     """
-    Convert a configuration object to a payload for the benchmark worker.
+    Benchmark CPU and GPU in isolated subprocesses and choose a backend for training based on the results.
     
-    The configuration object can be a SEAWRDConfig, a dictionary, or any object that provides a `to_dict` method. The
-    function returns a dictionary representation of the configuration that can be serialized to JSON for the worker
-    process. This allows the benchmark worker to receive the necessary configuration for training the model without
-    requiring the full SEAWRDConfig class or other dependencies.
-
     Parameters
     ----------
-    config : SEAWRDConfig | dict[str, Any] | Any
-        The configuration object to convert.
+    config : Mapping[str, Any]
+        A raw mapping containing the configuration for the model and training.
+    x_train : np.ndarray
+        The training input data.
+    y_train : np.ndarray
+        The training target data.
+    x_val : np.ndarray
+        The validation input data.
+    y_val : np.ndarray
+        The validation target data.
+    benchmark_epochs : int, optional
+        The number of epochs to train the model during benchmarking. Default is 10. 
+    benchmark_repeats : int, optional
+        The number of times to repeat the benchmark for each device. Default is 3.
+    warmup_epochs : int, optional
+        The number of warmup epochs to run before benchmarking. Default is 10.
 
     Returns
     -------
     dict[str, Any]
-        The benchmark worker payload.
-
-    Raises
-    ------
-    TypeError
-        If the configuration object does not provide a `to_dict` method and is not a mapping.
+        A dictionary containing the selected device, the reason for the selection, and the benchmark results for both
+        CPU and GPU.
     """
-    if isinstance(config, Mapping):
-        return dict(config)
-    if hasattr(config, "to_dict"):
-        return dict(config.to_dict())
-    raise TypeError("config must provide to_dict() or be a mapping for benchmark serialization")
+    x_train = np.asarray(x_train, dtype=np.float32)
+    y_train = np.asarray(y_train, dtype=np.float32).reshape(-1)
+    x_val = np.asarray(x_val, dtype=np.float32)
+    y_val = np.asarray(y_val, dtype=np.float32).reshape(-1)
 
+    output_config = config.get("output", {})
+    use_cache = output_config.get("use_cache", True)
+    if use_cache:
+        logger.info("Checking for cached benchmark results...")
+        result = _load_from_cache(
+            config=config,
+            num_inputs=x_train.shape[1],
+            num_outputs=y_train.shape[1] if y_train.ndim > 1 else 1,
+        )
+        if result: # if we have a cached result, return it immediately
+            logger.info("Using cached benchmark results for device selection.")
+            return result
+        logger.info("No cached benchmark results found; proceeding with benchmarking.")
+    else:
+        logger.info("Benchmark caching is disabled; proceeding with benchmarking.")
 
-def _get_min_gpu_speedup(config: SEAWRDConfig | dict[str, Any] | Any) -> float:
-    """
-    Get the minimum GPU speedup from the configuration object. The configuration object can be a SEAWRDConfig, a
-    dictionary, or any object that provides a `device.min_gpu_speedup` attribute. The function returns the minimum GPU
-    speedup as a float, which is used to determine whether to select the GPU for training based on the benchmark
-    results.
+    # Use a temporary directory to store the benchmark data and configuration for the worker processes
+    with tempfile.TemporaryDirectory() as tmpdir:
+        logger.debug("Using temporary directory for benchmarking: %s", tmpdir)
+        tmpdir = Path(tmpdir)
+        data_path = tmpdir / "benchmark_data.npz"
+        worker_config_path = tmpdir / "worker_config.json"
 
-    Parameters
-    ----------
-    config : SEAWRDConfig | dict[str, Any] | Any
-        The configuration object to extract the minimum GPU speedup from.
+        # Save the training and validation data to a .npz file for the worker processes to load
+        np.savez(
+            data_path,
+            input_features=x_train,
+            input_labels=y_train,
+            test_features=x_val,
+            test_labels=y_val,
+        )
 
-    Returns
-    -------
-    float
-        The minimum GPU speedup.
+        # Create a worker configuration dictionary containing the paths to the data and the SEAWRD configuration, as
+        # well as the benchmark parameters
+        worker_config = BenchmarkWorkerConfig.from_config(
+            config=config,
+            data_path=data_path,
+            benchmark_epochs=benchmark_epochs,
+            benchmark_repeats=benchmark_repeats,
+            warmup_epochs=warmup_epochs,
+        )
+        worker_config_dict = worker_config.to_dict()
+        logger.debug("Creating worker configuration: %s", worker_config_dict)
+        worker_config_path.write_text(json.dumps(worker_config_dict))
 
-    Raises
-    ------
-    TypeError
-        If the configuration object does not provide a `device.min_gpu_speedup` attribute and is not a mapping.
-    """
-    if isinstance(config, Mapping):
-        device_section = config.get("device", {})
-        if isinstance(device_section, Mapping) and "min_gpu_speedup" in device_section:
-            return float(device_section["min_gpu_speedup"])
+        # Run GPU benchmark first as it can fail if there is issues detecting GPU
+        try:
+            gpu_result = _run_worker("gpu", worker_config_path)
+        except Exception as exc:
+            logger.warning("GPU benchmark failed: %s", exc)
+            return DeviceChoice(
+                device="cpu",
+                reason=f"GPU benchmark failed: {exc}",
+                cpu_result=None,
+                gpu_result=None
+            )
 
-    device_section = getattr(config, "device", None)
-    if device_section is not None and hasattr(device_section, "min_gpu_speedup"):
-        return float(device_section.min_gpu_speedup)
+        # Check if a GPU was detected in the GPU benchmark result. If not, we fall back to CPU.
+        # note: done this way to avoid instantiating tensorflow outside of the subprocess
+        gpu_detected = bool(gpu_result.gpu_detected)
+        if not gpu_detected:
+            logger.warning("GPU benchmark did not detect a GPU. Falling back to CPU.")
+            return DeviceChoice(
+                device="cpu",
+                reason="CPU selected because TensorFlow did not detect a GPU inside the GPU benchmark process.",
+                cpu_result=None,
+                gpu_result=gpu_result
+            )
 
-    raise TypeError("config must provide device.min_gpu_speedup for benchmarking")
+        # Otherwise, now benchmark the CPU.
+        cpu_result = _run_worker("cpu", worker_config_path)
+
+    # Compare the median training times for CPU and GPU to determine which device to use for training. If the GPU is
+    # faster than the CPU by at least the minimum speedup specified in the configuration, we select the GPU. Otherwise,
+    # we fall back to CPU.
+    cpu_time = cpu_result.median_seconds
+    gpu_time = gpu_result.median_seconds
+    speedup = cpu_time / gpu_time
+    min_gpu_speedup = get_min_gpu_speedup(config)
+
+    if speedup >= min_gpu_speedup:
+        logger.info("GPU selected for training: GPU was %.2fx faster than CPU, "
+                    "exceeding the %.2fx minimum speedup threshold.", speedup, min_gpu_speedup)
+        device_choice = DeviceChoice(
+            device="gpu",
+            reason=(f"GPU selected because it was {speedup:.2f}x faster than CPU, "
+                    f"exceeding the {min_gpu_speedup:.2f}x minimum speedup threshold."),
+            cpu_result=cpu_result,
+            gpu_result=gpu_result
+        )
+
+        if use_cache:
+            _save_to_cache(
+                config=config,
+                num_inputs=x_train.shape[1],
+                num_outputs=y_train.shape[1] if y_train.ndim > 1 else 1,
+                device_choice=device_choice
+                )
+
+        return device_choice
+
+    logger.info(
+        "CPU selected for training: GPU was only %.2fx the speed of CPU, below the %.2fx minimum speedup threshold.",
+        speedup, min_gpu_speedup,
+    )
+
+    device_choice = DeviceChoice(
+        device="cpu",
+        reason=(f"CPU selected because GPU speedup was only {speedup:.2f}x below the {min_gpu_speedup:.2f}x threshold."),
+        cpu_result=cpu_result,
+        gpu_result=gpu_result
+    )
+    if use_cache:
+        _save_to_cache(
+            config=config,
+            num_inputs=x_train.shape[1],
+            num_outputs=y_train.shape[1] if y_train.ndim > 1 else 1,
+            device_choice=device_choice
+        )
+
+    return device_choice

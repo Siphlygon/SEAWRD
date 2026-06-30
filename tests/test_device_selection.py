@@ -13,7 +13,6 @@ import pytest
 
 from seawrd import device_selection
 from seawrd.device_selection import DeviceBenchmarkResult
-from seawrd.config import SEAWRDConfig
 
 
 def get_dummy_result(device: str, median_seconds: float, gpu_detected: bool = True) -> DeviceBenchmarkResult:
@@ -47,6 +46,25 @@ def get_dummy_result(device: str, median_seconds: float, gpu_detected: bool = Tr
     )
 
 
+def get_dummy_config(min_gpu_speedup: float = 1.2, use_cache: bool = False) -> dict[str, Any]:
+    """
+    Create a dummy configuration dictionary for testing purposes.
+
+    Returns
+    -------
+    dict[str, Any]
+        A dummy configuration dictionary.
+    """
+    return {
+        "device": {"min_gpu_speedup": min_gpu_speedup},
+        "model": {"num_layers": 2},
+        "training": {"batch_size": 1},
+        "compile": {"metrics": ["mean_squared_error"]},
+        "callbacks": {},
+        "output": {"use_cache": use_cache, "cache_dir": "cache\\"},
+    }
+
+
 def test_choose_training_device_uses_worker_gpu_flag(monkeypatch : Any):
     """
     Test that the choose_training_device function correctly uses the GPU detection flag from the worker process to
@@ -58,7 +76,7 @@ def test_choose_training_device_uses_worker_gpu_flag(monkeypatch : Any):
         The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
         for testing purposes.
     """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.2}})
+    cfg = get_dummy_config()
 
     calls: list[str] = []
 
@@ -99,7 +117,7 @@ def test_choose_training_device_selects_gpu_when_fast_enough(monkeypatch : Any):
         The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
         for testing purposes.
     """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.5}})
+    cfg = get_dummy_config(min_gpu_speedup=1.5)
 
     # Define a fake _run_worker function that simulates the behavior of the worker process for CPU and GPU benchmarking.
     def fake_run_worker(mode: str, worker_config_path):
@@ -135,7 +153,7 @@ def test_choose_training_device_selects_cpu_when_gpu_not_fast_enough(monkeypatch
         The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
         for testing purposes.
     """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 2.0}})
+    cfg = get_dummy_config(min_gpu_speedup=2.0)
 
     # Define a fake _run_worker function that simulates the behavior of the worker process for CPU and GPU benchmarking.
     def fake_run_worker(mode: str, worker_config_path):
@@ -170,7 +188,7 @@ def test_choose_training_device_selects_cpu_when_gpu_benchmark_fails(monkeypatch
         The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
         for testing purposes.
     """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.5}})
+    cfg = get_dummy_config()
 
     # Define a fake _run_worker function that simulates the behavior of the worker process for CPU and GPU benchmarking.
     def fake_run_worker(mode: str, worker_config_path):
@@ -206,7 +224,7 @@ def test_selection_reads_correct_json(monkeypatch : Any):
         The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
         for testing purposes.
     """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.5}})
+    cfg = get_dummy_config()
 
     calls: list[str] = []
 
@@ -240,7 +258,7 @@ def test_benchmark_worker_config_serializes_config_and_tuning_fields():
     Test that the benchmark worker payload stores the configuration as a raw mapping and serializes the benchmark
     tuning fields without loss.
     """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.5}})
+    cfg = get_dummy_config(min_gpu_speedup=3.0)
 
     payload = device_selection.BenchmarkWorkerConfig.from_config(
         config=cfg,
@@ -256,47 +274,7 @@ def test_benchmark_worker_config_serializes_config_and_tuning_fields():
     assert payload_dict["benchmark_epochs"] == 2
     assert payload_dict["benchmark_repeats"] == 3
     assert payload_dict["warmup_epochs"] == 4
-    assert payload_dict["seawrd_config"]["device"]["min_gpu_speedup"] == 1.5
-
-
-def test_choose_training_device_accepts_raw_mapping(monkeypatch : Any):
-    """
-    Test that choose_training_device can work with a raw mapping configuration instead of a SEAWRDConfig instance.
-    """
-    cfg = {
-        "device": {"min_gpu_speedup": 1.2},
-        "model": {"num_layers": 2},
-        "training": {"batch_size": 1},
-        "compile": {"metrics": ["mean_squared_error"]},
-        "callbacks": {},
-        "output": {},
-    }
-
-    calls: list[str] = []
-
-    def fake_run_worker(mode: str, _worker_config_path):
-        calls.append(mode)
-        config_data = json.loads(Path(_worker_config_path).read_text(encoding="utf-8"))
-        assert config_data["seawrd_config"]["model"]["num_layers"] == 2
-        if mode == "cpu":
-            return get_dummy_result(device="cpu", median_seconds=2.0)
-        return get_dummy_result(device="gpu", median_seconds=1.0, gpu_detected=True)
-
-    monkeypatch.setattr(device_selection, "_run_worker", fake_run_worker)
-
-    result = device_selection.choose_training_device(
-        config=cfg,
-        x_train=np.zeros((4, 2), dtype=np.float32),
-        y_train=np.zeros((4,), dtype=np.float32),
-        x_val=np.zeros((2, 2), dtype=np.float32),
-        y_val=np.zeros((2,), dtype=np.float32),
-        benchmark_epochs=1,
-        benchmark_repeats=1,
-        warmup_epochs=1,
-    )
-
-    assert calls == ["gpu", "cpu"]
-    assert result.device == "gpu"
+    assert payload_dict["seawrd_config"]["device"]["min_gpu_speedup"] == 3.0
 
 
 def test_correct_worker_config_written(monkeypatch : Any):
@@ -310,7 +288,7 @@ def test_correct_worker_config_written(monkeypatch : Any):
         The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the _run_worker function
         for testing purposes.
     """
-    cfg = SEAWRDConfig.from_dict({"device": {"min_gpu_speedup": 1.5}})
+    cfg = get_dummy_config()
 
     calls: list[str] = []
 
