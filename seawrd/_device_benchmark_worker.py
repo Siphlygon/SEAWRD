@@ -1,0 +1,146 @@
+"""
+A worker script to benchmark the training performance of a deep neural network on CPU and GPU devices. This script is intended to be run as a subprocess by the main device selection module, which will provide the necessary configuration and data paths.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+os.environ["KERAS_BACKEND"] = "tensorflow"
+
+import keras
+import numpy as np
+import tensorflow as tf
+
+from .config import SEAWRDConfig
+from .model import DNNManager
+from .trainer import DNNTrainer
+
+
+def _fit_once(config: SEAWRDConfig,
+              x_train: np.ndarray,
+              y_train: np.ndarray,
+              x_val: np.ndarray,
+              y_val: np.ndarray,
+              epochs: int,
+              seed: int) -> float:
+    """
+    Fit the model once and return the elapsed time in seconds.
+
+    Parameters
+    ----------
+    config : SEAWRDConfig
+        A SEAWRDConfig object containing the configuration for the model and training.
+    x_train : np.ndarray
+        The training input data.
+    y_train : np.ndarray
+        The training target data.
+    x_val : np.ndarray
+        The validation input data.
+    y_val : np.ndarray
+        The validation target data.
+    epochs : int
+        The number of epochs to train the model.
+    seed : int
+        The random seed for reproducibility.
+
+    Returns
+    -------
+    float
+        The elapsed time in seconds.
+    """
+    keras.backend.clear_session()
+    keras.utils.set_random_seed(seed)
+
+    manager = DNNManager.from_config(
+        model_config=config.model,
+        input_shape=x_train.shape[1:]
+    )
+    trainer = DNNTrainer(
+        model_manager=manager,
+        config=config
+    )
+
+    model = trainer.model_manager.clone_model()
+    manager.compile_from_config(model, config.compile)
+
+    start = time.perf_counter()
+    model.fit(
+        x_train,
+        y_train,
+        validation_data=(x_val, y_val),
+        epochs=epochs,
+        batch_size=config.training.batch_size,
+        verbose=0,
+        shuffle=config.training.shuffle
+    )
+    end = time.perf_counter()
+
+    return end - start
+
+
+def main():
+    """
+    The main function to run the benchmark worker. It reads the worker configuration from a JSON file specified in the command line arguments, loads the training and validation data, and runs the benchmark training for both CPU and GPU devices. The results are printed as a JSON object to stdout.
+    """
+    # Read the worker config from the command line argument
+    worker_config = json.loads(Path(sys.argv[1]).read_text())
+
+    # Load the benchmark data from the specified path in the worker config
+    data = np.load(worker_config["data_path"])
+    x_train = data["x_train"]
+    y_train = data["y_train"]
+    x_val = data["x_val"]
+    y_val = data["y_val"]
+    config = SEAWRDConfig.from_dict(
+        worker_config["seawrd_config"]
+    )
+    
+    # Extract the benchmark parameters from the worker config
+    warmup_epochs = worker_config["warmup_epochs"]
+    benchmark_epochs = worker_config["benchmark_epochs"]
+    repeats = worker_config["benchmark_repeats"]
+
+    # Run a warmup training to stabilise performance before benchmarking
+    # This is important because the first training run is always slower due to TensorFlow's initialisation..
+    _fit_once(
+        config,
+        x_train,
+        y_train,
+        x_val,
+        y_val,
+        warmup_epochs,
+        seed=0
+    )
+
+    # Run the benchmark training for the specified number of repeats and record the elapsed times
+    times = []
+    for repeat in range(repeats):
+        elapsed = _fit_once(
+            config,
+            x_train,
+            y_train,
+            x_val,
+            y_val,
+            benchmark_epochs,
+            seed=repeat+1
+        )
+        times.append(elapsed)
+
+    # Print the benchmark results as a JSON object to stdout, including whether a GPU was detected and the list of available GPU devices.
+    # The main process will parse this output to determine which device to use for training.
+    gpu_devices = tf.config.list_physical_devices("GPU")
+    result = {
+        "gpu_detected": bool(gpu_devices),
+        "gpu_devices": [device.name for device in gpu_devices],
+        "median_seconds": float(np.median(times)),
+        "times": times
+    }
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()
