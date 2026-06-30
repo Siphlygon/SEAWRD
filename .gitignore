@@ -1,5 +1,6 @@
 # Ignore models produced by the training process
 seawrd/models/
+models/
 
 # Ignore VSCode settings
 .vscode/

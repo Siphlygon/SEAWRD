@@ -11,7 +11,7 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
 import numpy as np
 
-from config import ModelConfig, CompileConfig
+from .config import ModelConfig, CompileConfig
 
 
 class DNNManager:
@@ -20,7 +20,7 @@ class DNNManager:
     """
     def __init__(self,
                  model : keras.Sequential,
-                 history : dict | None,
+                 history : keras.callbacks.History | None,
                  version : int,
                  model_name : str):
         """
@@ -31,15 +31,20 @@ class DNNManager:
         ----------
         model : keras.Sequential
             The Keras Sequential model to be managed.
-        history : dict | None
-            The training history of the model, if available. If None, it indicates that the model has not been trained yet.
+        history : keras.callbacks.History | None
+            The training history of the model, if available. If None, it indicates that the model has not been trained
+            yet.
         version : int
             The version number of the model. This is used for saving and loading different versions of the model.
         model_name : str
             The name of the model. This is used for saving and loading the model files.
         """
         self.model = model
-        self.history = history
+        self.history : keras.callbacks.History
+        if history is None:
+            self.history = keras.callbacks.History()
+        else:
+            self.history = history
         self.version = version
         self.model_name = model_name
 
@@ -160,6 +165,11 @@ class DNNManager:
             if isinstance(source_layer, keras.layers.Normalization):
                 target_layer.set_weights(source_layer.get_weights())
 
+                # Keras Normalization uses finalized internal state during calls. set_weights() updates the stored
+                # variables, but may not refresh the broadcast tensors used by the layer.
+                if hasattr(target_layer, "finalize_state"):
+                    target_layer.finalize_state()
+
     def clone_model(self) -> keras.Sequential:
         """
         Creates a clone of the current model with the same architecture and normalisation weights. This is useful for
@@ -177,7 +187,7 @@ class DNNManager:
         return model
 
     @staticmethod
-    def _compile_from_config(model : keras.Sequential, compile_config : CompileConfig) -> None:
+    def compile_from_config(model : keras.Sequential, compile_config : CompileConfig) -> None:
         """
         Compiles the current model using the instance's CompileConfig. This allows for dynamic compilation of the model
         with different loss functions, optimisers, and metrics.
@@ -348,7 +358,7 @@ class DNNManager:
         # Save the model and history
         model.save(paths["model"])
         with open(paths["history"], "wb") as f:
-            pickle.dump(history.history, f)
+            pickle.dump(history, f)
 
         print(f"Saved model version v{version}")
         print(f"Model:   {paths['model']}")
@@ -359,7 +369,7 @@ class DNNManager:
     def get_model_version(self,
                            model_dir : Path | str,
                            model_name : str,
-                           version : int | None = None) -> tuple[keras.Model, dict | None, int]:
+                           version : int | None = None) -> tuple[keras.Model, keras.callbacks.History | None, int]:
         """
         Retrieves a specific version of the model and its training history.
 
@@ -374,8 +384,12 @@ class DNNManager:
 
         Returns
         -------
-        tuple[keras.Model, dict | None, int]
-            A tuple containing the loaded model, its training history (if available), and the version number.
+        keras.Model
+            The loaded Keras model.
+        keras.callbacks.History | None
+            The training history of the model, if available. If not available, returns None.
+        int
+            The version number of the loaded model.
 
         Raises
         ------
@@ -390,11 +404,11 @@ class DNNManager:
             version = self.get_latest_version(model_dir, model_name)
 
         # If the specified version does not exist, raise an error
-        if version == 0:
-            raise FileNotFoundError(f"No saved model found for '{model_name}'.")
+        # if version == 0:
+        #     raise FileNotFoundError(f"No saved model found for '{model_name}'.")
 
         paths = self._get_model_paths(model_dir, model_name, version)
-        model = keras.models.load_model(paths["model"])
+        model = keras.models.load_model(paths["model"])  # type: ignore
 
         history = None
         if paths["history"].exists():
@@ -403,7 +417,7 @@ class DNNManager:
 
         print(f"Loaded model version v{version}")
 
-        return model, history, version
+        return model, history, version  # type:ignore
 
     def load_model_version(self,
                            model_dir : Path | str,
@@ -423,7 +437,10 @@ class DNNManager:
         """
         model, history, version = self.get_model_version(model_dir, model_name, version)
         self.model = model
-        self.history = history
+        if history is None:
+            self.history = keras.callbacks.History()
+        else:
+            self.history = history
         self.version = version
 
 
@@ -432,8 +449,8 @@ if __name__ == "__main__":
     train_features = np.asarray([[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 6]], dtype=np.float32)
 
     # Initialise and adapt the normaliser with the training features
-    normaliser = keras.layers.Normalization(axis=-1)
-    normaliser.adapt(np.array(train_features))
+    normal = keras.layers.Normalization(axis=-1)
+    normal.adapt(np.array(train_features))
     print("Normaliser adapted with training features.")
 
     # Decide the outputs
@@ -454,7 +471,7 @@ if __name__ == "__main__":
     dnn_manager = DNNManager.from_config(
         model_config=config,
         input_shape=train_features.shape[1:],
-        normaliser=normaliser
+        normaliser=normal
     )
     dnn_model = dnn_manager.model
     print("Model generated from configuration.")
