@@ -1,7 +1,7 @@
 Configuration Manager
 =====================
 
-.. automodule:: config_manager
+.. automodule:: seawrd.config_manager
    :members:
    :undoc-members:
    :show-inheritance:
