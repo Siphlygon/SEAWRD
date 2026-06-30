@@ -249,12 +249,14 @@ class DeviceConfig(ConfigSection):
     Configuration for the device on which to run the training (CPU or GPU).
     """
     mode: Literal["auto", "cpu", "gpu"] = "auto"
-    benchmark_device: bool = False
+    benchmark_device: bool = True
     min_gpu_speedup: float = 1.2
 
     def __post_init__(self):
         if self.mode not in {"auto", "cpu", "gpu"}:
             raise ValueError("device.mode must be 'auto', 'cpu', or 'gpu'")
+        if self.mode == "auto" and not self.benchmark_device:
+            raise ValueError("device.benchmark_device must be True when device.mode is 'auto'")
         if self.min_gpu_speedup <= 1:
             raise ValueError("device.min_gpu_speedup should be > 1")
 
