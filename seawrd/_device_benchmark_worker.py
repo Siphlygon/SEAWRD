@@ -21,6 +21,7 @@ from .config import SEAWRDConfig
 from .model import DNNManager
 from .trainer import DNNTrainer
 from .utils import fit_normaliser, load_npz_bundle, get_logger
+from .device_selection import DeviceBenchmarkResult, BenchmarkWorkerConfig
 
 logger = get_logger("seawrd.device_benchmark_worker")
 
@@ -87,7 +88,6 @@ def _fit_once(config: SEAWRDConfig,
         shuffle=config.training.shuffle
     )
     end = time.perf_counter()
-
     return end - start
 
 
@@ -99,40 +99,44 @@ def main():
     """
     # First check if a GPU is available in the current environment. If not, we can skip the GPU benchmark and just run
     # the CPU benchmark.
+    running_on_gpu = os.environ.get("CUDA_VISIBLE_DEVICES") == "0"  # would be "" if we set cpu mode
     gpu_devices = tf.config.list_physical_devices("GPU")
-    if os.environ.get("CUDA_VISIBLE_DEVICES") == "0" and not gpu_devices:
+    if running_on_gpu and not gpu_devices:
         logger.warning(
             "CUDA_VISIBLE_DEVICES is set to '0' but no GPU was detected. "
             "Skipping GPU benchmark and falling back to CPU."
         )
-        result = {
-            "gpu_detected": False,
-            "gpu_devices": [],
-            "median_seconds": None,
-            "times": []
-        }
-        print(json.dumps(result))
+        result = DeviceBenchmarkResult(
+            device="cpu",
+            times=[],
+            median_seconds=0.0,
+            mean_seconds=0.0,
+            std_seconds=0.0,
+            steps_per_second=0.0,
+            seconds_per_epoch=0.0,
+            gpu_detected=False,
+            gpu_devices=[],
+        )
+        print(json.dumps(result.to_dict()))
         return
 
     # Read the worker config from the command line argument
     logger.debug("Reading worker configuration from %s", sys.argv[1])
-    worker_config = json.loads(Path(sys.argv[1]).read_text())
+    worker_config = BenchmarkWorkerConfig.from_dict(json.loads(Path(sys.argv[1]).read_text()))
 
     # Load the benchmark data from the specified path in the worker config
-    logger.debug("Loading benchmark data from %s", worker_config["data_path"])
-    data = load_npz_bundle(Path(worker_config["data_path"]))
+    logger.debug("Loading benchmark data from %s", worker_config.data_path)
+    data = load_npz_bundle(Path(worker_config.data_path))
     x_train = data["input_features"]
     y_train = data["input_labels"]
     x_val = data["test_features"]
     y_val = data["test_labels"]
-    config = SEAWRDConfig.from_dict(
-        worker_config["seawrd_config"]
-    )
+    config = SEAWRDConfig.from_dict(worker_config.seawrd_config)
 
     # Extract the benchmark parameters from the worker config
-    warmup_epochs = worker_config["warmup_epochs"]
-    benchmark_epochs = worker_config["benchmark_epochs"]
-    repeats = worker_config["benchmark_repeats"]
+    warmup_epochs = worker_config.warmup_epochs
+    benchmark_epochs = worker_config.benchmark_epochs
+    repeats = worker_config.benchmark_repeats
     logger.info(
         "Starting benchmark with %d warmup epochs, %d benchmark epochs, and %d repeats.",
         warmup_epochs, benchmark_epochs, repeats
@@ -169,13 +173,21 @@ def main():
 
     # Print the benchmark results as a JSON object to stdout, including whether a GPU was detected and the list of
     # available GPU devices. The main process will parse this output to determine which device to use for training.
-    result = {
-        "gpu_detected": bool(gpu_devices),
-        "gpu_devices": [device.name for device in gpu_devices],
-        "median_seconds": float(np.median(times)),
-        "times": times
-    }
-    print(json.dumps(result))
+    steps_per_epoch = int(np.ceil(len(x_train) / config.training.batch_size))
+    total_steps = steps_per_epoch * config.device.benchmark_epochs
+
+    result = DeviceBenchmarkResult(
+        device="gpu" if running_on_gpu else "cpu",
+        times=times,
+        median_seconds=float(np.median(times)),
+        mean_seconds=float(np.mean(times)),
+        std_seconds=float(np.std(times)),
+        steps_per_second=float(total_steps / np.median(times)),
+        seconds_per_epoch=float(np.median(times) / benchmark_epochs),
+        gpu_detected=bool(gpu_devices),
+        gpu_devices=[device.name for device in gpu_devices],
+    )
+    print(json.dumps(result.to_dict()))
 
 
 if __name__ == "__main__":

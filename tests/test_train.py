@@ -10,6 +10,7 @@ import numpy as np
 
 from seawrd import train
 from seawrd.config import SEAWRDConfig
+from seawrd.device_selection import DeviceChoice
 
 
 def test_select_device_auto_mode(monkeypatch: Any):
@@ -44,20 +45,21 @@ def test_select_device_auto_mode(monkeypatch: Any):
 
     # Define a mock function to replace choose_training_device
     def mock_choose_training_device(*args, **kwargs):
-        return {"device": "cpu", "elapsed_time": 0.1}
+        return DeviceChoice(device="cpu", reason="mocked for testing")
 
-    # Use monkeypatch to replace the choose_training_device function with the mock
+    # Use monkeypatch to replace the choose_training_device function from selection with the mock
     monkeypatch.setattr(train, "choose_training_device", mock_choose_training_device)
 
     # Call the _select_device function and check the result
-    selected_device, benchmark_result = train._select_device(
+    device_choice = train._select_device(
         config=cfg,
         input_features=x_train,
         input_labels=y_train
     )
 
-    assert selected_device == "cpu"
-    assert benchmark_result is not None
+    assert device_choice.device == "cpu"
+    assert device_choice.gpu_result is None
+    assert device_choice.cpu_result is None
 
 
 def test_select_device_manual_mode():
@@ -85,14 +87,15 @@ def test_select_device_manual_mode():
     }
 
     # Call the _select_device function and check the result
-    selected_device, benchmark_result = train._select_device(
+    device_choice = train._select_device(
         config=cfg,
         input_features=x_train,
         input_labels=y_train
     )
 
-    assert selected_device == "cpu"
-    assert benchmark_result is None
+    assert device_choice.device == "cpu"
+    assert device_choice.gpu_result is None
+    assert device_choice.cpu_result is None
 
 
 def test_run_training_returns_expected_shapes():
@@ -122,13 +125,12 @@ def test_run_training_returns_expected_shapes():
     cfg = SEAWRDConfig.from_dict(cfg)
 
     # Call the run_training function and check the output shapes
-    train_losses, val_losses, test_predictions, test_losses, _ = train.run_training(
+    train_losses, val_losses, test_predictions, test_losses = train.run_training(
         config=cfg,
         input_features=x_train,
         input_labels=y_train,
         test_features=x_test,
         test_labels=y_test,
-        benchmark_result=None
     )
 
     assert isinstance(train_losses, np.ndarray)
@@ -191,8 +193,7 @@ def test_load_files_from_args_returns_expected_vaalues(tmp_path: Path):
             self.bundle_path = bundle_path
 
     args = DummyArgs()
-
-    config_dict, bundle = train.load_files_from_args(args)
+    config_dict, bundle = train._load_files_from_args(args)
 
     assert isinstance(config_dict, dict)
     assert isinstance(bundle, dict)

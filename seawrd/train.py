@@ -20,18 +20,18 @@ except ModuleNotFoundError:  # Python 3.10 fallback
     import tomli as tomllib
 
 from .bootstrap import load_effective_raw_config, set_device_env
-from .device_selection import choose_training_device
+from .device_selection import choose_training_device, DeviceChoice
 from .utils import load_npz_bundle, create_validation_split, fit_normaliser, get_logger
 
 from .config import SEAWRDConfig
 
 # Disable TensorFlow logging to avoid cluttering the output with warnings and info messages during training
 # This will not stop error messages e.g., from not being able to find CUDA
-import absl.logging
-absl.logging.set_verbosity(absl.logging.ERROR)
-absl.logging.set_stderrthreshold(absl.logging.ERROR)
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+# import absl.logging
+# absl.logging.set_verbosity(absl.logging.ERROR)
+# absl.logging.set_stderrthreshold(absl.logging.ERROR)
+# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+# os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 # Also set up back-end for keras for later
 os.environ["KERAS_BACKEND"] = "tensorflow"
@@ -41,10 +41,10 @@ logger = get_logger("seawrd.train")
 
 
 
-def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
+def _select_device(config: dict[str, dict[str, Any]],
                    input_features: np.ndarray,
                    input_labels: np.ndarray,
-                   ) -> tuple[str, dict[str, Any] | None]:
+                   ) -> DeviceChoice:
     """
     Select the training device (CPU or GPU) based on the provided configuration and benchmark results before importing
     TensorFlow/Keras.
@@ -55,8 +55,8 @@ def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
 
     Parameters
     ----------
-    config : SEAWRDConfig | dict[str, dict[str, Any]]
-        The configuration dictionary containing device and training settings.
+    config : dict[str, dict[str, Any]]
+        The configuration dictionary (avoiding importing SEAWRDConfig) containing device and training settings.
     input_features : np.ndarray
         The input features for training.
     input_labels : np.ndarray
@@ -64,21 +64,27 @@ def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
 
     Returns
     -------
-    tuple[str, dict[str, Any] | None]
-        The selected device and benchmark result.
+    DeviceChoice
+        The device choice object containing the selected device and benchmark results.
     """
-    if hasattr(config, "to_dict"):
-        config = config.to_dict()
     device_config = config.get("device", {})
     device_mode = device_config.get("mode", "auto")
 
     # If the device mode is explicitly set to "cpu" or "gpu", we can set the device environment variable accordingly
     if device_mode in {"cpu", "gpu"}:
-        return set_device_env(device_mode), None
+        device_choice = DeviceChoice(
+            device=device_mode,
+            reason=f"Device mode explicitly set to '{device_mode}' in configuration.")
+        set_device_env(device_mode)
+        return device_choice
 
     # If benchmarking is not enabled, we can default to CPU without running a benchmark
     if not device_config.get("benchmark_device", False):
-        return set_device_env("cpu"), None
+        device_choice = DeviceChoice(
+            device="cpu",
+            reason="Benchmarking is disabled in configuration; defaulting to CPU.")
+        set_device_env("cpu")
+        return device_choice
 
     logger.info("Mode is set to 'auto' and benchmarking is enabled. " 
                 "Running benchmark to select the best training device.")
@@ -91,7 +97,7 @@ def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
     )
 
     device_config = config.get("device", {})
-    benchmark_result = choose_training_device(
+    device_choice = choose_training_device(
         config=config,
         x_train=x_train,
         y_train=y_train,
@@ -102,8 +108,8 @@ def _select_device(config: SEAWRDConfig | dict[str, dict[str, Any]],
         warmup_epochs=int(device_config["warmup_epochs"]),
     )
 
-    selected_device = set_device_env(benchmark_result["device"])
-    return selected_device, benchmark_result
+    set_device_env(device_choice.device)
+    return device_choice
 
 
 def run_training(config: Any,
@@ -111,9 +117,7 @@ def run_training(config: Any,
                  input_labels: np.ndarray,
                  test_features: np.ndarray,
                  test_labels: np.ndarray,
-                 *,
-                 benchmark_result: dict[str, Any] | None,
-                 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any] | None]:
+                 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Run the full training pipeline after the training device has been selected.
 
@@ -129,15 +133,11 @@ def run_training(config: Any,
         The test features.
     test_labels : np.ndarray
         The test labels.
-    selected_device : str
-        The selected training device.
-    benchmark_result : dict[str, Any] | None
-        The benchmark result.
 
     Returns
     -------
-    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any] | None]
-        The training losses, validation losses, test predictions, test losses, and benchmark result.
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        The training losses, validation losses, test predictions, and test losses.
     """
     input_features = np.asarray(input_features, dtype=np.float32)
     input_labels = np.asarray(input_labels, dtype=np.float32).reshape(-1)
@@ -164,7 +164,7 @@ def run_training(config: Any,
         test_labels=test_labels,
     )
 
-    return (*results, benchmark_result)
+    return results
 
 
 def _build_argument_parser() -> argparse.ArgumentParser:
@@ -197,7 +197,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def load_files_from_args(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+def _load_files_from_args(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """
     Load the configuration and data bundle from the command-line arguments.
 
@@ -240,15 +240,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_argument_parser()
     args = parser.parse_args(argv)
 
-    raw_cfg, bundle = load_files_from_args(args)
+    raw_cfg, bundle = _load_files_from_args(args)
 
     logger.info("Selecting training device based on configuration and benchmark results.")
-    selected_device, benchmark_result = _select_device(
+    device_choice = _select_device(
         config=raw_cfg,
         input_features=bundle["input_features"],
         input_labels=bundle["input_labels"],
     )
-    logger.info("Selected training device: %s.", selected_device)
+    logger.info("Selected training device: %s.", device_choice.device)
+    logger.debug("GPU result: %s", device_choice.gpu_result)
+    logger.debug("CPU result: %s", device_choice.cpu_result)
 
     config = SEAWRDConfig.from_dict(raw_cfg)
 
@@ -259,7 +261,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         input_labels=bundle["input_labels"],
         test_features=bundle["test_features"],
         test_labels=bundle["test_labels"],
-        benchmark_result=benchmark_result,
     )
 
     return 0
