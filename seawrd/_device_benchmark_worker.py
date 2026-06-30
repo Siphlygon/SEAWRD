@@ -20,6 +20,7 @@ import tensorflow as tf
 from .config import SEAWRDConfig
 from .model import DNNManager
 from .trainer import DNNTrainer
+from .utils import fit_normaliser, load_npz_bundle
 
 
 def _fit_once(config: SEAWRDConfig,
@@ -58,9 +59,7 @@ def _fit_once(config: SEAWRDConfig,
     keras.utils.set_random_seed(seed)
 
     # Train a normaliser if required
-    if config.model.use_normalisation is not False:
-        normal = keras.layers.Normalization(axis=-1)
-        normal.adapt(x_train)
+    normal = fit_normaliser(x_train) if config.model.use_normalisation is not False else None
 
     manager = DNNManager.from_config(
         model_config=config.model,
@@ -100,11 +99,11 @@ def main():
     worker_config = json.loads(Path(sys.argv[1]).read_text())
 
     # Load the benchmark data from the specified path in the worker config
-    data = np.load(worker_config["data_path"])
-    x_train = data["x_train"]
-    y_train = data["y_train"]
-    x_val = data["x_val"]
-    y_val = data["y_val"]
+    data = load_npz_bundle(Path(worker_config["data_path"]))
+    x_train = data["input_features"]
+    y_train = data["input_labels"]
+    x_val = data["test_features"]
+    y_val = data["test_labels"]
     config = SEAWRDConfig.from_dict(
         worker_config["seawrd_config"]
     )

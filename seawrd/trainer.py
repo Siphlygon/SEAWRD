@@ -10,6 +10,7 @@ import tensorflow_docs.modeling
 from .config import SEAWRDConfig
 from .config_manager import ConfigManager
 from .model import DNNManager
+from .utils import create_validation_split
 
 
 class DNNTrainer:
@@ -248,40 +249,6 @@ class DNNTrainer:
         errors = actual_values - predictions
         return errors
 
-    def _create_validation_split(self,
-                               input_features: np.ndarray | pd.DataFrame,
-                               input_labels: np.ndarray | pd.Series
-                               ) -> tuple[np.ndarray | pd.DataFrame,
-                                          np.ndarray | pd.Series,
-                                          np.ndarray | pd.DataFrame,
-                                          np.ndarray | pd.Series]:
-        """
-        Create a validation split from the input features and labels based on the validation split ratio specified in
-        the training configuration.
-        
-        Parameters
-        ----------
-        input_features : np.ndarray | pd.DataFrame
-            The features of the input dataset, which will be split into training and validation sets.
-        input_labels : np.ndarray | pd.Series
-            The labels of the input dataset, which will be split into training and validation sets.
-            
-        Returns
-        -------
-        x_train : np.ndarray | pd.DataFrame
-            The features of the training dataset.
-        y_train : np.ndarray | pd.Series
-            The labels of the training dataset.
-        x_val : np.ndarray | pd.DataFrame
-            The features of the validation dataset.
-        y_val : np.ndarray | pd.Series
-            The labels of the validation dataset.
-        """
-        n_val = int(len(input_features) * self.training_config.validation_split)
-        x_train, x_val = input_features[:-n_val], input_features[-n_val:]
-        y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
-        return x_train, y_train, x_val, y_val
-
     def _train_single_model(self,
                            model : keras.Model,
                            train_features : np.ndarray | pd.DataFrame,
@@ -371,7 +338,9 @@ class DNNTrainer:
         val_losses : np.ndarray
             The validation losses for each model.
         """
-        x_train, y_train, x_val, y_val = self._create_validation_split(input_features, input_labels)
+        x_train, y_train, x_val, y_val = create_validation_split(input_features,
+                                                                 input_labels,
+                                                                 self.training_config.validation_split)
 
         # Initialize arrays to store statistics about each model
         num_models = self.training_config.num_models

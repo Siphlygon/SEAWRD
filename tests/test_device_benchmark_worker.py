@@ -72,10 +72,10 @@ def test_main_prints_json(tmp_path: Path, monkeypatch: Any):
 
     np.savez(
         fake_data_path,
-        x_train=np.zeros((4, 2), dtype=np.float32),
-        y_train=np.zeros((4,), dtype=np.float32),
-        x_val=np.zeros((2, 2), dtype=np.float32),
-        y_val=np.zeros((2,), dtype=np.float32),
+        input_features=np.zeros((4, 2), dtype=np.float32),
+        input_labels=np.zeros((4,), dtype=np.float32),
+        test_features=np.zeros((2, 2), dtype=np.float32),
+        test_labels=np.zeros((2,), dtype=np.float32),
     )
 
     # Monkeypatch sys.argv to simulate command line arguments for the benchmark worker.
@@ -154,10 +154,10 @@ def test_main_with_invalid_config_raises_exception(tmp_path: Path, monkeypatch: 
 
     np.savez(
         fake_data_path,
-        x_train=np.zeros((4, 2), dtype=np.float32),
-        y_train=np.zeros((4,), dtype=np.float32),
-        x_val=np.zeros((2, 2), dtype=np.float32),
-        y_val=np.zeros((2,), dtype=np.float32),
+        input_features=np.zeros((4, 2), dtype=np.float32),
+        input_labels=np.zeros((4,), dtype=np.float32),
+        test_features=np.zeros((2, 2), dtype=np.float32),
+        test_labels=np.zeros((2,), dtype=np.float32),
     )
 
     # Monkeypatch sys.argv to simulate command line arguments for the benchmark worker.

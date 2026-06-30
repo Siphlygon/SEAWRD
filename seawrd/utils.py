@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+
 os.environ.setdefault("KERAS_BACKEND", "tensorflow")
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -71,3 +73,78 @@ def fit_normaliser(train_features: pd.DataFrame | np.ndarray) -> "keras.layers.N
 
     normaliser.adapt(values)
     return normaliser
+
+
+def load_npz_bundle(bundle_path: Path) -> dict[str, np.ndarray]:
+    """
+    Load a NumPy .npz bundle containing training and testing features and labels.
+
+    Parameters
+    ----------
+    bundle_path : Path
+        Path to the .npz bundle file.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        A dictionary containing the loaded arrays.
+
+    Raises
+    ------
+    ValueError
+        If the bundle is missing any of the required keys: 'input_features', 'input_labels', 'test_features', 'test_labels'.
+    """
+    bundle = np.load(bundle_path, allow_pickle=False)
+    required_keys = {
+        "input_features",
+        "input_labels",
+        "test_features",
+        "test_labels",
+    }
+
+    missing_keys = required_keys - set(bundle.files)
+    if missing_keys:
+        raise ValueError(
+            f"Training bundle {bundle_path} is missing keys: {sorted(missing_keys)}"
+        )
+
+    return {key: np.asarray(bundle[key]) for key in required_keys}
+
+
+def create_validation_split(input_features: np.ndarray | pd.DataFrame,
+                            input_labels: np.ndarray | pd.Series,
+                            validation_split: float
+                            ) -> tuple[np.ndarray | pd.DataFrame,
+                                        np.ndarray | pd.Series,
+                                        np.ndarray | pd.DataFrame,
+                                        np.ndarray | pd.Series]:
+    """
+    Create a validation split from the input features and labels based on the given validation split ratio.
+    
+    Parameters
+    ----------
+    input_features : np.ndarray | pd.DataFrame
+        The features of the input dataset, which will be split into training and validation sets.
+    input_labels : np.ndarray | pd.Series
+        The labels of the input dataset, which will be split into training and validation sets.
+    validation_split : float
+        The fraction of the dataset to be used for validation. Must be between 0 and 1.
+
+    Returns
+    -------
+    x_train : np.ndarray | pd.DataFrame
+        The features of the training dataset.
+    y_train : np.ndarray | pd.Series
+        The labels of the training dataset.
+    x_val : np.ndarray | pd.DataFrame
+        The features of the validation dataset.
+    y_val : np.ndarray | pd.Series
+        The labels of the validation dataset.
+    """
+    n_val = int(len(input_features) * validation_split)
+    if n_val <= 0 or n_val >= len(input_features):
+        raise ValueError("Unable to create a split from the provided data and validation_split value.")
+
+    x_train, x_val = input_features[:-n_val], input_features[-n_val:]
+    y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
+    return x_train, y_train, x_val, y_val
