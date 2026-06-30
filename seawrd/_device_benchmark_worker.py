@@ -1,5 +1,7 @@
 """
-A worker script to benchmark the training performance of a deep neural network on CPU and GPU devices. This script is intended to be run as a subprocess by the main device selection module, which will provide the necessary configuration and data paths.
+A worker script to benchmark the training performance of a deep neural network on CPU and GPU devices. This script is
+intended to be run as a subprocess by the main device selection module, which will provide the necessary configuration
+and data paths.
 """
 from __future__ import annotations
 
@@ -84,7 +86,9 @@ def _fit_once(config: SEAWRDConfig,
 
 def main():
     """
-    The main function to run the benchmark worker. It reads the worker configuration from a JSON file specified in the command line arguments, loads the training and validation data, and runs the benchmark training for both CPU and GPU devices. The results are printed as a JSON object to stdout.
+    The main function to run the benchmark worker. It reads the worker configuration from a JSON file specified in the
+    command line arguments, loads the training and validation data, and runs the benchmark training for both CPU and GPU
+    devices. The results are printed as a JSON object to stdout.
     """
     # Read the worker config from the command line argument
     worker_config = json.loads(Path(sys.argv[1]).read_text())
@@ -130,8 +134,8 @@ def main():
         )
         times.append(elapsed)
 
-    # Print the benchmark results as a JSON object to stdout, including whether a GPU was detected and the list of available GPU devices.
-    # The main process will parse this output to determine which device to use for training.
+    # Print the benchmark results as a JSON object to stdout, including whether a GPU was detected and the list of
+    # available GPU devices. The main process will parse this output to determine which device to use for training.
     gpu_devices = tf.config.list_physical_devices("GPU")
     result = {
         "gpu_detected": bool(gpu_devices),
