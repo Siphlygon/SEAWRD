@@ -57,9 +57,15 @@ def _fit_once(config: SEAWRDConfig,
     keras.backend.clear_session()
     keras.utils.set_random_seed(seed)
 
+    # Train a normaliser if required
+    if config.model.use_normalisation is not False:
+        normal = keras.layers.Normalization(axis=-1)
+        normal.adapt(x_train)
+
     manager = DNNManager.from_config(
         model_config=config.model,
-        input_shape=x_train.shape[1:]
+        input_shape=x_train.shape[1:],
+        normaliser=normal if config.model.use_normalisation else None
     )
     trainer = DNNTrainer(
         model_manager=manager,
@@ -102,7 +108,7 @@ def main():
     config = SEAWRDConfig.from_dict(
         worker_config["seawrd_config"]
     )
-    
+
     # Extract the benchmark parameters from the worker config
     warmup_epochs = worker_config["warmup_epochs"]
     benchmark_epochs = worker_config["benchmark_epochs"]
