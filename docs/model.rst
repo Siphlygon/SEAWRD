@@ -1,7 +1,7 @@
 Model
 =====
 
-.. automodule:: model
+.. automodule:: seawrd.model
    :members:
    :undoc-members:
    :show-inheritance:

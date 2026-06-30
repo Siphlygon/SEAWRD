@@ -1,6 +1,9 @@
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../seawrd'))
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 # Configuration file for the Sphinx documentation builder.
 #

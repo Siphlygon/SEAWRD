@@ -1,7 +1,7 @@
 Preprocessing Data
 ==================
 
-.. automodule:: preprocessing_data
+.. automodule:: seawrd.preprocessing_data
    :members:
    :undoc-members:
    :show-inheritance:

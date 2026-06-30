@@ -23,7 +23,6 @@ User Guides
 +++++++++++
 .. toctree::
    :maxdepth: 2
-   :caption: User Guides:
 
    installation
 
@@ -33,7 +32,6 @@ Public API
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
    config
    config_manager

@@ -1,7 +1,7 @@
 Configuration
 =============
 
-.. automodule:: config
+.. automodule:: seawrd.config
    :members:
    :undoc-members:
    :show-inheritance:
