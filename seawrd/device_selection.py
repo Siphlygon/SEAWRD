@@ -273,7 +273,6 @@ class BenchmarkCache:
     # Configuration
     seawrd_config: dict[str, Any]
     num_inputs : int
-    num_outputs : int
 
     # Device information
     tensorflow_version: str
@@ -283,6 +282,51 @@ class BenchmarkCache:
 
     # Cached benchmark results
     device_choice: DeviceChoice
+
+    # The benchmark relevant fields inside the configuration that are used to generate a unique cache key
+    _RELEVANT_FIELDS = (
+        "num_layers",
+        "num_neurons",
+        "num_outputs",
+        "activation",
+        "use_normalisation",
+        "batch_size",
+        "shuffle",
+        "loss",
+        "optimiser",
+        "learning_rate",
+        "metrics",
+        "steps_per_execution",
+        "jit_compile",
+        "min_gpu_speedup", # todo: could intelligently deal with this changing; dynamically see if to load cache
+        "warmup_epochs",
+        "benchmark_epochs",
+        "benchmark_repeats",
+    )
+
+
+    def _get_relevant_config(self) -> dict[str, Any]:
+        """
+        Extract the relevant configuration fields from the SEAWRD configuration for generating a unique cache key.
+        
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary containing only the relevant configuration fields necessary for generating a unique cache key.
+        """
+        model_config = self.seawrd_config.get("model", {})
+        training_config = self.seawrd_config.get("training", {})
+        compile_config = self.seawrd_config.get("compile", {})
+        device_config = self.seawrd_config.get("device", {})
+
+        relevant_config = {
+            "model": {k: model_config[k] for k in self._RELEVANT_FIELDS if k in model_config},
+            "training": {k: training_config[k] for k in self._RELEVANT_FIELDS if k in training_config},
+            "compile": {k: compile_config[k] for k in self._RELEVANT_FIELDS if k in compile_config},
+            "device": {k: device_config[k] for k in self._RELEVANT_FIELDS if k in device_config},
+        }
+        return relevant_config
+
 
     def to_overhead(self) -> dict[str, Any]:
         """
@@ -297,9 +341,8 @@ class BenchmarkCache:
             information necessary for generating a unique cache key.
         """
         return {
-            "seawrd_config": self.seawrd_config,
+            "seawrd_config": self._get_relevant_config(),
             "num_inputs": self.num_inputs,
-            "num_outputs": self.num_outputs,
             "tensorflow_version": self.tensorflow_version,
             "keras_version": self.keras_version,
             "gpu_names": list(self.gpu_names),
@@ -331,7 +374,6 @@ def _cache_key(overhead : dict[str, Any]) -> str:
 
 def _create_benchmark_cache(config : Mapping[str, Any],
                             num_inputs: int,
-                            num_outputs: int,
                             device_choice: DeviceChoice) -> BenchmarkCache:
     """
     Create a BenchmarkCache instance from the provided configuration, number of inputs and outputs, and device choice.
@@ -342,8 +384,6 @@ def _create_benchmark_cache(config : Mapping[str, Any],
         A raw mapping containing the configuration for the model and training.
     num_inputs : int
         The number of input features for the model.
-    num_outputs : int
-        The number of output features for the model.
     device_choice : DeviceChoice
         The selected device and benchmark results.
 
@@ -355,7 +395,6 @@ def _create_benchmark_cache(config : Mapping[str, Any],
     return BenchmarkCache(
         seawrd_config=config_to_worker_payload(config),
         num_inputs=num_inputs,
-        num_outputs=num_outputs,
         tensorflow_version=version("tensorflow"),
         keras_version=version("keras"),
         gpu_names=tuple(get_gpu_names()),
@@ -366,7 +405,6 @@ def _create_benchmark_cache(config : Mapping[str, Any],
 
 def _save_to_cache(config : Mapping[str, Any],
                    num_inputs: int,
-                   num_outputs: int,
                    device_choice: DeviceChoice) -> None:
     """
     Save the benchmark cache to a JSON file in the specified cache directory. The cache file is named based on a unique
@@ -378,8 +416,6 @@ def _save_to_cache(config : Mapping[str, Any],
         A raw mapping containing the configuration for the model and training.
     num_inputs : int
         The number of input features for the model.
-    num_outputs : int
-        The number of output features for the model.
     device_choice : DeviceChoice
         The selected device and benchmark results.
 
@@ -395,12 +431,11 @@ def _save_to_cache(config : Mapping[str, Any],
     cache = _create_benchmark_cache(
         config=config,
         num_inputs=num_inputs,
-        num_outputs=num_outputs,
         device_choice=device_choice,
     )
     overhead = cache.to_overhead()
     cache_key = _cache_key(overhead)
-    
+
     # Save the cache to a JSON file named based on the cache key in the specified cache directory
     cache_path = cache_dir / f"benchmark_{cache_key}.json"
     logger.info("Saving benchmark results to cache: %s", cache_path)
@@ -412,8 +447,7 @@ def _save_to_cache(config : Mapping[str, Any],
 
 
 def _load_from_cache(config : Mapping[str, Any],
-                     num_inputs: int,
-                     num_outputs: int) -> DeviceChoice | None:
+                     num_inputs: int) -> DeviceChoice | None:
     """
     Load the benchmark cache from a JSON file in the specified cache directory. The cache file is named based on a
     unique cache key generated from the cache overhead. If the cache file exists, it is loaded and the DeviceChoice is
@@ -425,9 +459,7 @@ def _load_from_cache(config : Mapping[str, Any],
         A raw mapping containing the configuration for the model and training.
     num_inputs : int
         The number of input features for the model.
-    num_outputs : int
-        The number of output features for the model.
-
+    
     Returns
     -------
     DeviceChoice | None
@@ -441,7 +473,6 @@ def _load_from_cache(config : Mapping[str, Any],
     benchmark_cache = _create_benchmark_cache(
         config=config,
         num_inputs=num_inputs,
-        num_outputs=num_outputs,
         device_choice=DeviceChoice(
             device="unknown",
             reason="Cache overhead only; no benchmark results yet.",
@@ -460,6 +491,7 @@ def _load_from_cache(config : Mapping[str, Any],
         cached_data = json.loads(cache_path.read_text())
         return DeviceChoice.from_dict(cached_data["device_choice"])
     return None
+
 
 def _run_worker(mode: str, worker_config_path: Path) -> DeviceBenchmarkResult:
     """
@@ -574,7 +606,6 @@ def choose_training_device(config: Mapping[str, Any],
         result = _load_from_cache(
             config=config,
             num_inputs=x_train.shape[1],
-            num_outputs=y_train.shape[1] if y_train.ndim > 1 else 1,
         )
         if result: # if we have a cached result, return it immediately
             logger.info("Using cached benchmark results for device selection.")
@@ -662,7 +693,6 @@ def choose_training_device(config: Mapping[str, Any],
             _save_to_cache(
                 config=config,
                 num_inputs=x_train.shape[1],
-                num_outputs=y_train.shape[1] if y_train.ndim > 1 else 1,
                 device_choice=device_choice
                 )
 
