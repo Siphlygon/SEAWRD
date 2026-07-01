@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from seawrd import device_selection
-from seawrd.device_selection import DeviceBenchmarkResult
+from seawrd.device_selection import DeviceBenchmarkResult, BenchmarkCache, DeviceChoice, BenchmarkWorkerConfig
 
 
 def get_dummy_result(device: str, median_seconds: float, gpu_detected: bool = True) -> DeviceBenchmarkResult:
@@ -46,7 +46,9 @@ def get_dummy_result(device: str, median_seconds: float, gpu_detected: bool = Tr
     )
 
 
-def get_dummy_config(min_gpu_speedup: float = 1.2, use_cache: bool = False) -> dict[str, Any]:
+def get_dummy_config(min_gpu_speedup: float = 1.2,
+                     use_cache: bool = False,
+                     cache_dir: str = "cache\\") -> dict[str, Any]:
     """
     Create a dummy configuration dictionary for testing purposes.
 
@@ -61,7 +63,7 @@ def get_dummy_config(min_gpu_speedup: float = 1.2, use_cache: bool = False) -> d
         "training": {"batch_size": 1},
         "compile": {"metrics": ["mean_squared_error"]},
         "callbacks": {},
-        "output": {"use_cache": use_cache, "cache_dir": "cache\\"},
+        "output": {"use_cache": use_cache, "cache_dir": cache_dir},
     }
 
 
@@ -260,7 +262,7 @@ def test_benchmark_worker_config_serializes_config_and_tuning_fields():
     """
     cfg = get_dummy_config(min_gpu_speedup=3.0)
 
-    payload = device_selection.BenchmarkWorkerConfig.from_config(
+    payload = BenchmarkWorkerConfig.from_config(
         config=cfg,
         data_path=Path("/tmp/benchmark_data.npz"),
         benchmark_epochs=2,
@@ -320,16 +322,10 @@ def test_correct_worker_config_written(monkeypatch : Any):
     assert calls == ["gpu", "cpu"]
 
 
-def test_correct_environment_variable_set_by_mode(monkeypatch : Any):
+def test_correct_environment_variable_set_by_mode():
     """
     Test that the set_device_env function called within _run_worker correctly sets the CUDA_VISIBLE_DEVICES environment
     variable based on the specified device mode.
-
-    Parameters
-    ----------
-    monkeypatch : Any
-        The pytest monkeypatch fixture, which allows us to temporarily modify the behavior of the os.environ for testing
-        purposes.
     """
     # Save the original environment variable to restore it later
     original_cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
@@ -350,3 +346,78 @@ def test_correct_environment_variable_set_by_mode(monkeypatch : Any):
         os.environ["CUDA_VISIBLE_DEVICES"] = original_cuda_visible_devices
     else:
         del os.environ["CUDA_VISIBLE_DEVICES"]
+
+
+def test_save_to_cache_and_load_from_cache(tmp_path: Path):
+    """
+    Test that the _save_to_cache and _load_from_cache functions correctly save and load the device choice to/from a
+    cache file.
+    """
+    cfg = get_dummy_config(cache_dir=tmp_path.as_posix()+ "/cache")
+    device_choice = device_selection.DeviceChoice(device="gpu", reason="test reason")
+
+    # Save to cache
+    device_selection._save_to_cache(
+        config=cfg,
+        num_inputs=2,
+        device_choice=device_choice,
+    )
+
+    # Load from cache
+    loaded_device_choice = device_selection._load_from_cache(
+        config=cfg,
+        num_inputs=2,
+    )
+
+    assert loaded_device_choice is not None
+    assert loaded_device_choice.device == device_choice.device
+    assert loaded_device_choice.reason == device_choice.reason
+
+
+def test_load_from_cache_returns_none_for_missing_cache(tmp_path: Path):
+    """
+    Test that the _load_from_cache function returns None when the cache file does not exist.
+    """
+    cfg = get_dummy_config(cache_dir=tmp_path.as_posix()+ "/cache")
+
+    # Attempt to load from cache when no cache file exists
+    loaded_device_choice = device_selection._load_from_cache(
+        config=cfg,
+        num_inputs=2,
+    )
+
+    assert loaded_device_choice is None
+
+
+def test_correct_fields_in_cache_file(tmp_path: Path):
+    """
+    Test that the cache file created by _save_to_cache contains the correct fields and values.
+    """
+    cfg = get_dummy_config(cache_dir=tmp_path.as_posix()+ "/cache")
+    device_choice = DeviceChoice(device="gpu", reason="test reason")
+
+    # Save to cache
+    device_selection._save_to_cache(
+        config=cfg,
+        num_inputs=2,
+        device_choice=device_choice,
+    )
+
+    # Get the cache name
+    benchmark_cache = device_selection._create_benchmark_cache(
+        config=cfg,
+        num_inputs=2,
+        device_choice=device_choice,
+    )
+    cache_name = device_selection._cache_key(benchmark_cache.to_overhead())
+
+    # Read the cache file directly
+    cache_file_path = tmp_path / "cache" / f"benchmark_{cache_name}.json"
+    with open(cache_file_path, "r") as f:
+        cache_data = json.load(f)
+
+    assert cache_data["overhead"]["num_inputs"] == 2
+    assert "model_name" not in cache_data["overhead"]  # model_name is not part of the overhead
+    assert cache_data["device_choice"]["device"] == "gpu"
+    assert cache_data["device_choice"]["reason"] == "test reason"
+

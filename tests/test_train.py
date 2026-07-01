@@ -7,10 +7,13 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import tomli_w
+import pytest
 
 from seawrd import train
 from seawrd.config import SEAWRDConfig
 from seawrd.device_selection import DeviceChoice
+from seawrd.bootstrap import load_effective_raw_config
 
 
 def test_select_device_auto_mode(monkeypatch: Any):
@@ -156,7 +159,7 @@ def test_arg_parser_has_correct_arguments():
     assert "bundle_path" in args
 
 
-def test_load_files_from_args_returns_expected_vaalues(tmp_path: Path):
+def test_load_files_from_args_returns_expected_values(tmp_path: Path):
     """
     Test that the load_files_from_args function returns the expected values for the configuration and data bundle. This
     test creates a temporary configuration file and a dummy .npz data bundle to simulate command-line arguments.
@@ -211,3 +214,66 @@ def test_load_files_from_args_returns_expected_vaalues(tmp_path: Path):
     # Check that the configuration values match the expected values
     assert config_dict["model"]["num_layers"] == 2
     assert config_dict["training"]["batch_size"] == 1
+
+
+def test_load_effective_raw_config_merges_defaults_and_overrides(tmp_path: Path):
+    """
+    Test that the load_effective_raw_config function correctly merges the default configuration with the user-provided
+    configuration, allowing for non-default configurations to be used in benchmarking.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        A temporary directory provided by pytest for creating temporary files.
+    """
+    default_config = {
+        "device": {"mode": "auto", "min_gpu_speedup": 1.2},
+        "training": {"batch_size": 32, "validation_split": 0.2},
+    }
+    user_config = {
+        "device": {"mode": "gpu"},
+        "training": {"batch_size": 64},
+    }
+
+    default_config_path = tmp_path / "default_config.toml"
+    user_config_path = tmp_path / "user_config.toml"
+
+    # Write the default and user configurations to temporary TOML files
+    with default_config_path.open("wb") as f:
+        tomli_w.dump(default_config, f)
+
+    with user_config_path.open("wb") as f:
+        tomli_w.dump(user_config, f)
+
+    effective_config = load_effective_raw_config(
+        config_path=user_config_path,
+        default_config_path=default_config_path,
+    )
+
+    assert effective_config["device"]["mode"] == "gpu"  # User override takes precedence
+    assert effective_config["device"]["min_gpu_speedup"] == 1.2  # Default value retained
+    assert effective_config["training"]["batch_size"] == 64  # User override takes precedence
+    assert effective_config["training"]["validation_split"] == 0.2  # Default value retained
+
+
+def test_load_npz_bundle_raises_value_error_for_missing_keys(tmp_path: Path):
+    """
+    Test that the load_npz_bundle function raises a ValueError when the provided .npz bundle is missing required keys.
+    This test creates a temporary .npz file with missing keys to simulate an invalid data bundle.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        A temporary directory provided by pytest for creating temporary files.
+    """
+    # Create a temporary .npz data bundle with missing keys
+    bundle_path = tmp_path / "invalid_data_bundle.npz"
+    np.savez(
+        bundle_path,
+        input_features=np.zeros((10, 2), dtype=np.float32),
+        # Missing input_labels, test_features, and test_labels
+    )
+
+    # Attempt to load the invalid bundle and check for ValueError
+    with pytest.raises(ValueError) as exc_info:
+        train.load_npz_bundle(bundle_path)

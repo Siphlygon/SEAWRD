@@ -12,6 +12,7 @@ dependencies = [
     "numpy",
     "pandas",
     "tomli",
+    "tomli_w",
     "matplotlib",
     "pytest",
     "pytest-cov",
