@@ -44,6 +44,7 @@ logger = get_logger("seawrd.train")
 def _select_device(config: dict[str, dict[str, Any]],
                    input_features: np.ndarray,
                    input_labels: np.ndarray,
+                   force_benchmark: bool = False
                    ) -> DeviceChoice:
     """
     Select the training device (CPU or GPU) based on the provided configuration and benchmark results before importing
@@ -108,6 +109,7 @@ def _select_device(config: dict[str, dict[str, Any]],
         benchmark_epochs=int(device_config["benchmark_epochs"]),
         benchmark_repeats=int(device_config["benchmark_repeats"]),
         warmup_epochs=int(device_config["warmup_epochs"]),
+        force_benchmark=force_benchmark
     )
 
     set_device_env(device_choice.device)
@@ -196,6 +198,11 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional path to a custom SEAWRD TOML configuration file for benchmarking and training.",
     )
+    parser.add_argument(
+        "--force-benchmark",
+        action="store_true",
+        help="Force benchmarking even if a cached result exists.",
+    )
     return parser
 
 
@@ -243,12 +250,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     raw_cfg, bundle = _load_files_from_args(args)
+    assert not (raw_cfg["device"]["benchmark_device"] is False and args.force_benchmark is True), (
+        "Benchmarking must be enabled in the configuration if --force-benchmark is set to True.")
 
     logger.info("Selecting training device based on configuration and benchmark results.")
     device_choice = _select_device(
         config=raw_cfg,
         input_features=bundle["input_features"],
         input_labels=bundle["input_labels"],
+        force_benchmark=args.force_benchmark
     )
     logger.info("Selected training device: %s.", device_choice.device)
     logger.debug("GPU result: %s", device_choice.gpu_result)

@@ -565,7 +565,8 @@ def choose_training_device(config: Mapping[str, Any],
                            y_val: np.ndarray,
                            benchmark_epochs: int = 10,
                            benchmark_repeats: int = 3,
-                           warmup_epochs: int = 10) -> DeviceChoice:
+                           warmup_epochs: int = 10,
+                           force_benchmark: bool = False) -> DeviceChoice:
     """
     Benchmark CPU and GPU in isolated subprocesses and choose a backend for training based on the results.
     
@@ -587,6 +588,8 @@ def choose_training_device(config: Mapping[str, Any],
         The number of times to repeat the benchmark for each device. Default is 3.
     warmup_epochs : int, optional
         The number of warmup epochs to run before benchmarking. Default is 10.
+    force_benchmark : bool, optional
+        Whether to force benchmarking even if a cached result exists. Default is False.
 
     Returns
     -------
@@ -607,10 +610,13 @@ def choose_training_device(config: Mapping[str, Any],
             config=config,
             num_inputs=x_train.shape[1],
         )
-        if result: # if we have a cached result, return it immediately
-            logger.info("Using cached benchmark results for device selection.")
-            return result
-        logger.info("No cached benchmark results found; proceeding with benchmarking.")
+        if result:
+            logger.info("Found cached benchmark results for this device and config.")
+            if not force_benchmark:
+                return result
+            logger.info("Force benchmarking enabled; ignoring cached results and proceeding with benchmarking.")
+        else:
+            logger.info("No cached benchmark results found; proceeding with benchmarking.")
     else:
         logger.info("Benchmark caching is disabled; proceeding with benchmarking.")
 
