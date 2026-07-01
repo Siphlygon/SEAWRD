@@ -2,6 +2,15 @@
 seawrd/models/
 models/
 
+# Ignore cache files produced by the device selection process
+seawrd/cache/
+cache/
+
+# Ignore data files
+*.npz
+
+
+
 # Ignore VSCode settings
 .vscode/
 

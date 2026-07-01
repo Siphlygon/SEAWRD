@@ -9,7 +9,7 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # Python <=3.10 fallback, will require the `tomli` package to be installed
 
-from .config import SEAWRDConfig, ModelConfig, TrainingConfig, CompileConfig, CallbackConfig, DeviceConfig, OutputConfig
+from .config import SEAWRDConfig
 
 
 class ConfigManager:

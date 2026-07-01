@@ -14,6 +14,7 @@ import matplotlib
 from seawrd.config import SEAWRDConfig
 from seawrd.model import DNNManager
 from seawrd.trainer import DNNTrainer
+from seawrd.utils import create_validation_split
 
 
 class DummyModel:
@@ -208,17 +209,16 @@ def test_plot_loss_curve_saves_file(tmp_path):
 
 def test_validation_split_created_properly():
     """
-    Test that the _create_validation_split method of DNNTrainer creates a validation split correctly based on the
-    specified validation split ratio. This test checks that the resulting training and validation sets have the
-    expected sizes.
+    Test that the create_validation_split method of utils (used within DNNTrainer) creates a validation split correctly
+    based on the specified validation split ratio. This test checks that the resulting training and validation sets have
+    the expected sizes.
     """
-    trainer = trainer_with_default_config()  # default validation_split is 0.2
     features = pd.DataFrame({"a": np.arange(100)})
     labels = pd.Series(np.arange(100))
 
-    train_features, train_labels, val_features, val_labels = trainer._create_validation_split(
-        features, labels
-    )
+    train_features, train_labels, val_features, val_labels = create_validation_split(features,
+                                                                                     labels,
+                                                                                     validation_split=0.2)
 
     assert len(train_features) == 80
     assert len(val_features) == 20

@@ -1,42 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace, fields
+from dataclasses import asdict, dataclass, fields, replace
 from typing import Any, Literal, Mapping
+
 from typing_extensions import Self
 
-import keras
-
-
-def validate_keras_field(field_name: str, field_type: str):
-    """
-    Validate that Keras can resolve a given field identifier.
-
-    Parameters
-    ----------
-    field_name : str
-        The name of the field to validate (e.g., 'loss', 'metric', 'activation').
-    field_type : str
-        The name of the Keras module to use for validation (e.g., losses, metrics, activations).
-    
-    Raises
-    ------    
-    ValueError
-        If the field identifier or type is unknown or unsupported.
-    """
-    match field_type:
-        case "losses":
-            keras_module = keras.losses
-        case "metrics":
-            keras_module = keras.metrics
-        case "activations":
-            keras_module = keras.activations
-        case _:
-            raise ValueError(f"Unknown or unsupported Keras field type: {field_type!r}")
-
-    try:
-        keras_module.get(field_name)
-    except Exception as exc:
-        raise ValueError(f"Unknown or unsupported Keras {field_type}: {field_name!r}") from exc
+from .utils import validate_keras_field
 
 
 class ConfigSection:
@@ -280,14 +249,25 @@ class DeviceConfig(ConfigSection):
     Configuration for the device on which to run the training (CPU or GPU).
     """
     mode: Literal["auto", "cpu", "gpu"] = "auto"
-    benchmark_device: bool = False
+    benchmark_device: bool = True
     min_gpu_speedup: float = 1.2
+    warmup_epochs: int = 10
+    benchmark_epochs: int = 100
+    benchmark_repeats: int = 3
 
     def __post_init__(self):
         if self.mode not in {"auto", "cpu", "gpu"}:
             raise ValueError("device.mode must be 'auto', 'cpu', or 'gpu'")
+        if self.mode == "auto" and not self.benchmark_device:
+            raise ValueError("device.benchmark_device must be True when device.mode is 'auto'")
         if self.min_gpu_speedup <= 1:
             raise ValueError("device.min_gpu_speedup should be > 1")
+        if self.warmup_epochs < 0:
+            raise ValueError("device.warmup_epochs must be >= 0")
+        if self.benchmark_epochs <= 0:
+            raise ValueError("device.benchmark_epochs must be > 0")
+        if self.benchmark_repeats <= 0:
+            raise ValueError("device.benchmark_repeats must be > 0")
 
 
 @dataclass(frozen=True)
@@ -296,6 +276,8 @@ class OutputConfig(ConfigSection):
     Configuration for output settings, including model saving and plot generation.
     """
     model_dir: str = "models/"
+    cache_dir: str = "cache/"
+    use_cache: bool = True
     version: int = 1
     save_model: bool = True
     save_plots: bool = True

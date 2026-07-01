@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence, Tuple, Union
+import argparse
 import os
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Union
 
-os.environ["KERAS_BACKEND"] = "tensorflow"
-import keras
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from pandas import DataFrame
+
+from .utils import fit_normaliser
+
+if TYPE_CHECKING:
+    import keras
 
 
 class DataPreprocessor:
@@ -34,7 +36,7 @@ class DataPreprocessor:
         random_state: Optional[int] = 0, #Random state for reproducibility
         quality_column: str | None = "errcode", #Name of filter column
         quality_value: int | None = 0, #The value we allow through the filter
-        normalize: bool = True, #Whether or not to fit a Keras normalization layer
+        normalise: bool = True, #Whether or not to fit a Keras normalisation layer
     ):
         """
         Initialize the DataPreprocessor with a DataFrame and optional parameters.
@@ -55,8 +57,8 @@ class DataPreprocessor:
             Column name used for filtering poor-quality rows, by default None, which means no filtering is applied
         quality_value : int | None, optional
             Value in the quality column that indicates a good-quality row, by default 0
-        normalize : bool, optional
-            Whether to fit a Keras normalization layer to the features, by default True
+        normalise : bool, optional
+            Whether to fit a Keras normalisation layer to the features, by default True
         """
         # Copies the dataframe to protect the original, or try converting df into a pandas DataFrame
         self.df = df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame(df)
@@ -66,11 +68,11 @@ class DataPreprocessor:
         self.random_state = random_state
         self.quality_column = quality_column
         self.quality_value = quality_value
-        self.normalize = normalize
+        self.normalise = normalise
 
         self.feature_names_: Optional[list[str]] = None
         self.label_name_: Optional[str] = None
-        self.normalizer: Optional[keras.layers.Normalization] = None
+        self.normaliser: Optional[keras.layers.Normalization] = None
 
         # Run the preparation step to validate inputs, filter data, and derive features/label
         self._prepare()
@@ -95,19 +97,19 @@ class DataPreprocessor:
         if self.label is not None and not isinstance(self.label, str):
             raise TypeError("label must be a string")
 
-    def _filter_quality(self, df: DataFrame) -> DataFrame:
+    def _filter_quality(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Filter rows based on quality column values.
 
         Parameters
         ----------
-        df : DataFrame
+        df : pd.DataFrame
             Input DataFrame to filter.
 
         Returns
         -------
-        DataFrame
-            Filtered DataFrame.
+        pd.DataFrame
+            Filtered pandas DataFrame.
         """
         if self.quality_column not in df.columns:
             raise ValueError(f"Quality column '{self.quality_column}' is not present in the dataframe")
@@ -115,36 +117,36 @@ class DataPreprocessor:
         df = df[df[self.quality_column] == self.quality_value]
         return df.copy()
 
-    def _derive_columns(self, df: DataFrame) -> DataFrame:
+    def _derive_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Derive new columns based on existing columns.
 
         Parameters
         ----------
-        df : DataFrame
-            Input DataFrame to derive columns.
+        df : pd.DataFrame
+            Input pandas DataFrame to derive columns.
 
         Returns
         -------
-        DataFrame
-            DataFrame with derived columns.
+        pd.DataFrame
+            pandas DataFrame with derived columns.
         """
         for derived_name, source_columns in self.DERIVED_COLUMNS.items():
             if derived_name not in df.columns and all(col in df.columns for col in source_columns):
                 df[derived_name] = df[list(source_columns)].sum(axis=1)
         return df
 
-    def _infer_label(self, df: DataFrame) -> str:
+    def _infer_label(self, df: pd.DataFrame) -> str:
         """
-        Infer the label column name from the DataFrame.
+        Infer the label column name from the pandas DataFrame.
         
         If the label is explicitly provided, it checks for its existence in the DataFrame. If not provided, it defaults
         to "R_p" if present, which is the planet radius and not contained explicitly within the dataset.
 
         Parameters
         ----------
-        df : DataFrame
-            Input DataFrame to infer the label column from.
+        df : pd.DataFrame
+            Input pandas DataFrame to infer the label column from.
 
         Returns
         -------
@@ -164,14 +166,14 @@ class DataPreprocessor:
             return "R_p"
         raise ValueError("Unable to infer a label column. Provide label explicitly.")
 
-    def _infer_features(self, df: DataFrame, label: str) -> list[str]:
+    def _infer_features(self, df: pd.DataFrame, label: str) -> list[str]:
         """
-        Infer feature column names from the DataFrame, excluding the label and quality columns.
+        Infer feature column names from the pandas DataFrame, excluding the label and quality columns.
 
         Parameters
         ----------
-        df : DataFrame
-            Input DataFrame to infer feature columns from.
+        df : pd.DataFrame
+            Input pandas DataFrame to infer feature columns from.
         label : str
             Label column name.
 
@@ -223,14 +225,20 @@ class DataPreprocessor:
 
 
     # ---------- DATA SPLITTING AND NORMALIZATION METHODS ----------
-    def split(self) -> Tuple[DataFrame, DataFrame, pd.Series, pd.Series]:
+    def split(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
         """
-        Split the DataFrame into training and testing sets.
+        Split the pandas DataFrame into training and testing sets.
 
         Returns
         -------
-        Tuple[DataFrame, DataFrame, pd.Series, pd.Series]
-            Training and testing feature and label DataFrames/Series.
+        trainn_df : pd.DataFrame
+            Training features pandas DataFrame.
+        test_df : pd.DataFrame
+            Testing features pandas DataFrame.
+        train_labels : pd.Series
+            Training labels pandas Series.
+        test_labels : pd.Series
+            Testing labels pandas Series.
         """
         train_df = self.df.sample(frac=1.0 - self.test_size, random_state=self.random_state)
         test_df = self.df.drop(train_df.index)
@@ -242,38 +250,19 @@ class DataPreprocessor:
             test_df[self.label_name_].copy(),
         )
 
-    def fit_normalizer(self, train_features: DataFrame) -> keras.layers.Normalization:
-        """
-        Fit a Keras Normalization layer to the training features.
-
-        Parameters
-        ----------
-        train_features : DataFrame
-            Training feature DataFrame to fit the normalizer.
-
-        Returns
-        -------
-        keras.layers.Normalization
-            Fitted Keras Normalization layer.
-        """
-        normalizer = keras.layers.Normalization(axis=-1, name="feature_normalizer")
-        normalizer.adapt(train_features.to_numpy(dtype=np.float32))
-        self.normalizer = normalizer
-        return normalizer
-
 
     # ---------- PUBLIC METHODS ----------
     def get_training_data(self,
                           return_array: bool = True,
         ) -> Tuple[
                 Optional[keras.layers.Normalization],
-                Union[DataFrame, np.ndarray],
-                Union[DataFrame, np.ndarray],
+                Union[pd.DataFrame, np.ndarray],
+                Union[pd.DataFrame, np.ndarray],
                 Union[pd.Series, np.ndarray],
                 Union[pd.Series, np.ndarray],
             ]:
         """
-        Return train/test splits and an optional fitted normalizer.
+        Return train/test splits and an optional fitted normaliser.
 
         Parameters
         ----------
@@ -283,89 +272,96 @@ class DataPreprocessor:
 
         Returns
         -------
-        Tuple[Optional[keras.layers.Normalization], Union[DataFrame, np.ndarray], Union[DataFrame, np.ndarray], Union[pd.Series, np.ndarray], Union[pd.Series, np.ndarray]]
-            Fitted normalizer (if applicable) and training/testing feature/label data.
+        normaliser : Optional[keras.layers.Normalization]
+            The fitted Keras Normalization layer if normalization is enabled, otherwise None.
+        train_features : Union[pd.DataFrame, np.ndarray]
+            Training features as a pandas DataFrame or NumPy array.
+        test_features : Union[pd.DataFrame, np.ndarray]
+            Testing features as a pandas DataFrame or NumPy array.
+        train_labels : Union[pd.Series, np.ndarray]
+            Training labels as a pandas Series or NumPy array.
+        test_labels : Union[pd.Series, np.ndarray]
+            Testing labels as a pandas Series or NumPy array.
         """
         train_features, test_features, train_labels, test_labels = self.split()
-        normalizer = self.fit_normalizer(train_features) if self.normalize else None
+        if self.normalise:
+            normaliser = fit_normaliser(train_features)
+            self.normaliser = normaliser
+        else:
+            normaliser = None
 
         if return_array:
             return (
-                normalizer,
+                normaliser,
                 train_features.to_numpy(dtype=np.float32),
                 test_features.to_numpy(dtype=np.float32),
                 train_labels.to_numpy(dtype=np.float32),
                 test_labels.to_numpy(dtype=np.float32),
             )
 
-        return normalizer, train_features, test_features, train_labels, test_labels
+        return normaliser, train_features, test_features, train_labels, test_labels
 
-    def to_tf_dataset(
-        self,
-        batch_size: int = 32,
-        shuffle: bool = True,
-    ) -> tf.data.Dataset:
+    # def to_tf_dataset(
+    #     self,
+    #     batch_size: int = 32,
+    #     shuffle: bool = True,
+    # ) -> tf.data.Dataset:
+    #     """
+    #     Convert the prepared data into a TensorFlow Dataset.
+
+    #     Parameters
+    #     ----------
+    #     batch_size : int, optional
+    #         The batch size for the dataset, by default 32
+    #     shuffle : bool, optional
+    #         Whether to shuffle the dataset, by default True
+
+    #     Returns
+    #     -------
+    #     tf.data.Dataset
+    #         The converted TensorFlow Dataset.
+    #     """
+    #     # Get the training data as NumPy arrays
+    #     _, features, _, labels, _ = self.get_training_data(return_array=True)
+
+    #     dataset = tf.data.Dataset.from_tensor_slices((features, labels))
+    #     if shuffle:
+    #         dataset = dataset.shuffle(buffer_size=len(features), seed=self.random_state)
+    #     return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    def save_to_npz(self, path: Union[str, os.PathLike]) -> None:
         """
-        Convert the prepared data into a TensorFlow Dataset.
+        Save the prepared data to a .npz file.
 
         Parameters
         ----------
-        batch_size : int, optional
-            The batch size for the dataset, by default 32
-        shuffle : bool, optional
-            Whether to shuffle the dataset, by default True
-
-        Returns
-        -------
-        tf.data.Dataset
-            The converted TensorFlow Dataset.
+        path : Union[str, os.PathLike]
+            The file path where the .npz file will be saved.
         """
-        # Get the training data as NumPy arrays
-        _, features, _, labels, _ = self.get_training_data(return_array=True)
-
-        dataset = tf.data.Dataset.from_tensor_slices((features, labels))
-        if shuffle:
-            dataset = dataset.shuffle(buffer_size=len(features), seed=self.random_state)
-        return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        _, features, test_features, labels, test_labels = self.get_training_data(return_array=True)
+        np.savez(
+            path,
+            input_features=features,
+            test_features=test_features,
+            input_labels=labels,
+            test_labels=test_labels,
+        )
 
 
 if __name__ == "__main__":
-    # Dummy data for testing the DataPreprocessor class
-    data = {
-        "x_core'": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
-        "x_H2O": [0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
-        "T_irr": [100, 200, 300, 400, 500, 600],
-        "T_b": [150, 250, 350, 450, 550, 650],
-        "M_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-        "M_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "R_b": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-        "R_a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "errcode": [0, 0, 1, 0, 0, 0],
-    }
-    df = pd.DataFrame(data)
-    preprocessor = DataPreprocessor(df, label="R_p", features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"])
+    parser = argparse.ArgumentParser(description="Preprocess planetary data for ML regression training.")
+    parser.add_argument("input_path", type=str, help="Path to the input data file")
+    parser.add_argument("--output-path", type=str, help="Path to save the preprocessed .npz file")
+    args = parser.parse_args()
 
-    print("Prepared DataFrame:")
-    print(preprocessor.df)
+    # Load the input data
+    input_data = pd.read_table(args.input_path, sep=r"\s+")
+    features = [col for col in input_data.columns if col not in ["R_p", "M_p", "errcode"]]
+    label = "R_p"
 
-    train_features, test_features, train_labels, test_labels = preprocessor.split()
-    print("\nTrain Features:")
-    print(train_features)
-    print("\nTest Features:")
-    print(test_features)
-    print("\nTrain Labels:")
-    print(train_labels)
-    print("\nTest Labels:")
-    print(test_labels)
+    # Initialise the DataPreprocessor with the input data
+    preprocessor = DataPreprocessor(input_data, features, label)
 
-    normalizer = preprocessor.fit_normalizer(train_features)
-    print("\nFitted Normalizer Mean:")
-    print(normalizer.mean.numpy())
-
-    tf_dataset = preprocessor.to_tf_dataset(batch_size=32, shuffle=True)
-    print("\nTensorFlow Dataset:")
-    for batch_features, batch_labels in tf_dataset.take(1):
-        print("Batch Features:")
-        print(batch_features.numpy())
-        print("Batch Labels:")
-        print(batch_labels.numpy())
+    # If specified, save the preprocessed data to a .npz file
+    if args.output_path:
+        preprocessor.save_to_npz(args.output_path)
