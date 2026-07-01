@@ -12,8 +12,6 @@ Please cite the `DOI <https://doi.org/10.5281/zenodo.20869608>`_ if you make use
 
 Acknowledgements
 ++++++++++++++++
-The authors of this project would like to thank `Artyom Aguichine <https://an0wen.github.io/>`_ for providing the motivation and skeleton code adapted for this Code/Astro project.
-
 The data source file "DNN_data_IOP_Aguichine2021.dat" used in the example usage Jupyter notebook is from Aguichine et al. (2021), and you are encouraged to read their paper found here:
 
 A. Aguichine, O. Mousis, M. Deleuil, and E. Marcq, “Mass–Radius relationships for irradiated ocean planets,” The Astrophysical Journal, vol. 914, no. 2, p. 84, Jun. 2021, doi: `10.3847/1538-4357/abfa99 <https://doi.org/10.3847/1538-4357/abfa99>`_.
@@ -25,6 +23,8 @@ User Guides
    :maxdepth: 2
 
    installation
+   cuda
+   useful_commands
 
 
 Public API
@@ -38,6 +38,11 @@ Public API
    preprocessing_data
    model
    trainer
+   device_selection
+   device_benchmark_worker
+   bootstrap
+   utils
+
 
 
 Indices and tables
