@@ -27,11 +27,11 @@ from .config import SEAWRDConfig
 
 # Disable TensorFlow logging to avoid cluttering the output with warnings and info messages during training
 # This will not stop error messages e.g., from not being able to find CUDA
-# import absl.logging
-# absl.logging.set_verbosity(absl.logging.ERROR)
-# absl.logging.set_stderrthreshold(absl.logging.ERROR)
-# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-# os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+import absl.logging
+absl.logging.set_verbosity(absl.logging.ERROR)
+absl.logging.set_stderrthreshold(absl.logging.ERROR)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 # Also set up back-end for keras for later
 os.environ["KERAS_BACKEND"] = "tensorflow"
@@ -72,6 +72,7 @@ def _select_device(config: dict[str, dict[str, Any]],
 
     # If the device mode is explicitly set to "cpu" or "gpu", we can set the device environment variable accordingly
     if device_mode in {"cpu", "gpu"}:
+        logger.info("Device mode is explicitly set to '%s' in configuration. Skipping benchmarking.", device_mode)
         device_choice = DeviceChoice(
             device=device_mode,
             reason=f"Device mode explicitly set to '{device_mode}' in configuration.")
@@ -80,13 +81,14 @@ def _select_device(config: dict[str, dict[str, Any]],
 
     # If benchmarking is not enabled, we can default to CPU without running a benchmark
     if not device_config.get("benchmark_device", False):
+        logger.info("Benchmarking is disabled in configuration. Defaulting to CPU.")
         device_choice = DeviceChoice(
             device="cpu",
             reason="Benchmarking is disabled in configuration; defaulting to CPU.")
         set_device_env("cpu")
         return device_choice
 
-    logger.info("Mode is set to 'auto' and benchmarking is enabled. " 
+    logger.info("Mode is set to 'auto' and benchmarking is enabled. "
                 "Running benchmark to select the best training device.")
 
     training_config = config.get("training", {})

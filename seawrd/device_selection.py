@@ -459,7 +459,7 @@ def _load_from_cache(config : Mapping[str, Any],
         A raw mapping containing the configuration for the model and training.
     num_inputs : int
         The number of input features for the model.
-    
+
     Returns
     -------
     DeviceChoice | None
@@ -713,7 +713,6 @@ def choose_training_device(config: Mapping[str, Any],
         _save_to_cache(
             config=config,
             num_inputs=x_train.shape[1],
-            num_outputs=y_train.shape[1] if y_train.ndim > 1 else 1,
             device_choice=device_choice
         )
 

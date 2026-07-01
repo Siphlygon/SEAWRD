@@ -1,0 +1,10 @@
+keras
+tensorflow[and-cuda]
+tensorflow_docs
+numpy
+pandas
+tomli
+matplotlib
+pytest
+pytest-cov
+ipykernel
