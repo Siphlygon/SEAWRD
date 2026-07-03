@@ -23,9 +23,9 @@ authors = [
   {name = "Bishwash Devkota", email = "bishwashdevkota567@gmail.com"},
   {name = "Fredi Quispe Huaynasi", email = "fredifqh@gmail.com"},
   {name = "Ian Rain-Water", email = "irainw@stanford.edu"},
-  {name = "Artem Aguichine", email = ""},
-  {name = "Anne Dattilo", email = ""},
-  {name = "Hailey Feller", email = ""}
+  {name = "Artem Aguichine"},
+  {name = "Anne Dattilo"},
+  {name = "Hailey Feller"}
 ]
 description = "Surrogate Emulator for Aquatic World Radius Determination"
 readme = "README.md"
