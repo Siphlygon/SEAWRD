@@ -1,5 +1,5 @@
 keras
-tensorflow
+tensorflow[and-cuda]
 tensorflow_docs
 numpy
 pandas

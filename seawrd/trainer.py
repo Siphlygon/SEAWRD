@@ -10,6 +10,7 @@ import tensorflow_docs.modeling
 from .config import SEAWRDConfig
 from .config_manager import ConfigManager
 from .model import DNNManager
+from .utils import create_validation_split
 
 
 class DNNTrainer:
@@ -245,45 +246,15 @@ class DNNTrainer:
 
         predictions = model.predict(test_features).reshape(-1)
         actual_values = test_labels.reshape(-1)
-        error = actual_values - predictions
-        return error
-
-    def _create_validation_split(self,
-                               input_features: pd.DataFrame,
-                               input_labels: pd.Series) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
-        """
-        Create a validation split from the input features and labels based on the validation split ratio specified in
-        the training configuration.
-        
-        Parameters
-        ----------
-        input_features : pd.DataFrame
-            The features of the input dataset, which will be split into training and validation sets.
-        input_labels : pd.Series
-            The labels of the input dataset, which will be split into training and validation sets.
-            
-        Returns
-        -------
-        pd.DataFrame
-            The features of the training dataset.
-        pd.Series
-            The labels of the training dataset.
-        pd.DataFrame
-            The features of the validation dataset.
-        pd.Series
-            The labels of the validation dataset.
-        """
-        n_val = int(len(input_features) * self.training_config.validation_split)
-        x_train, x_val = input_features[:-n_val], input_features[-n_val:]
-        y_train, y_val = input_labels[:-n_val], input_labels[-n_val:]
-        return x_train, y_train, x_val, y_val
+        errors = actual_values - predictions
+        return errors
 
     def _train_single_model(self,
                            model : keras.Model,
-                           train_features : pd.DataFrame,
-                           train_labels : pd.Series,
-                           val_features : pd.DataFrame,
-                           val_labels : pd.Series) -> keras.callbacks.History:
+                           train_features : np.ndarray | pd.DataFrame,
+                           train_labels : np.ndarray | pd.Series,
+                           val_features : np.ndarray | pd.DataFrame,
+                           val_labels : np.ndarray | pd.Series) -> keras.callbacks.History:
         """
         Train the provided model using the specified random seed for reproducibility. The training process involves
         compiling the model, fitting it to the training data, and applying callbacks for learning rate adjustment and
@@ -293,13 +264,13 @@ class DNNTrainer:
         ----------
         model : keras.Model
             The Keras model to be trained.
-        train_features : pd.DataFrame
+        train_features : np.ndarray | pd.DataFrame
             The features of the training dataset.
-        train_labels : pd.Series
+        train_labels : np.ndarray | pd.Series
             The labels of the training dataset.
-        val_features : pd.DataFrame
+        val_features : np.ndarray | pd.DataFrame
             The features of the validation dataset.
-        val_labels : pd.Series
+        val_labels : np.ndarray | pd.Series
             The labels of the validation dataset.
 
         Returns
@@ -336,38 +307,40 @@ class DNNTrainer:
         return history
 
     def train_models(self,
-                     input_features: pd.DataFrame,
-                     input_labels: pd.Series,
-                     test_features: pd.DataFrame,
-                     test_labels: pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                     input_features: np.ndarray | pd.DataFrame,
+                     input_labels: np.ndarray | pd.Series,
+                     test_features: np.ndarray | pd.DataFrame,
+                     test_labels: np.ndarray | pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Train multiple models with different random initialisations and keep the best one based on validation loss. This
         method also collects statistics about each model's performance.
 
         Parameters
         ----------
-        input_features : pd.DataFrame
+        input_features : np.ndarray | pd.DataFrame
             The features of the input dataset, which will be used for training and validation.
-        input_labels : pd.Series
+        input_labels : np.ndarray | pd.Series
             The labels of the input dataset, which will be split into training and validation sets based on the
             validation_split parameter.
-        test_features : pd.DataFrame
+        test_features : np.ndarray | pd.DataFrame
             The features of the test dataset.
-        test_labels : pd.Series
+        test_labels : np.ndarray | pd.Series
             The labels of the test dataset.
         
         Returns
         -------
-        np.ndarray
+        pred_means : np.ndarray
             The mean prediction errors for each model.
-        np.ndarray
+        pred_stds : np.ndarray
             The standard deviation of prediction errors for each model.
-        np.ndarray
+        losses : np.ndarray
             The training losses for each model.
-        np.ndarray
+        val_losses : np.ndarray
             The validation losses for each model.
         """
-        x_train, y_train, x_val, y_val = self._create_validation_split(input_features, input_labels)
+        x_train, y_train, x_val, y_val = create_validation_split(input_features,
+                                                                 input_labels,
+                                                                 self.training_config.validation_split)
 
         # Initialize arrays to store statistics about each model
         num_models = self.training_config.num_models

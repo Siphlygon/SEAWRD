@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "seawrd"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
     "keras",
     "tensorflow",
@@ -12,6 +12,7 @@ dependencies = [
     "numpy",
     "pandas",
     "tomli",
+    "tomli_w",
     "matplotlib",
     "pytest",
     "pytest-cov",
@@ -21,7 +22,10 @@ authors = [
   {name = "Ashley Parr", email = "amparr83@gmail.com"},
   {name = "Bishwash Devkota", email = "bishwashdevkota567@gmail.com"},
   {name = "Fredi Quispe Huaynasi", email = "fredifqh@gmail.com"},
-  {name = "Ian Rain-Water", email = "irainw@stanford.edu"}
+  {name = "Ian Rain-Water", email = "irainw@stanford.edu"},
+  {name = "Artem Aguichine"},
+  {name = "Anne Dattilo"},
+  {name = "Hailey Feller"}
 ]
 description = "Surrogate Emulator for Aquatic World Radius Determination"
 readme = "README.md"

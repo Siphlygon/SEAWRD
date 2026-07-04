@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "SEAWRD"
+version: 0.5.0
+date-released: '2026-07-01'
+type: software
+authors:
+  - family-names: Parr
+    given-names: Ashley
+    affiliation: University of Manchester
+    orcid: "https://orcid.org/0009-0006-7007-2108"
+  - family-names: Devkota
+    given-names: Bishwash
+    affiliation: Missouri State University
+    orcid: "https://orcid.org/0009-0004-5777-5920"
+  - family-names: Quispe Huaynasi
+    given-names: Fredi
+    affiliation: Observatorio Nacional de Rio de Janeiro
+    orcid: "https://orcid.org/0000-0001-8741-8642"
+  - family-names: Rain-Water
+    given-names: Ian
+    affiliation: SLAC National Accelerator Laboratory 
+  - family-names: Aguichine
+    given-names: Artem
+    affiliation: Instituto de Astronomía - Ensenada, UNAM
+    orcid: "https://orcid.org/0000-0002-8949-5956"
+  - family-names: Dattilo
+    given-names: Anne
+    affiliation: Penn State University
+    orcid: "https://orcid.org/0000-0002-1092-2995"
+  - family-names: Feller
+    given-names: Hailey
+    affiliatiion: University of California Santa Cruz
+license: MIT
+repository-code: "https://github.com/Siphlygon/SEAWRD"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.20869607"
+url: "http://seawrd.readthedocs.io/"
+abstract: >-
+  SEAWRD is an open-source project providing tools to
+  create, manage, and train small surrogate models to
+  approximate exoplanet simulations
+keywords:
+  - exoplanets
+  - machine-learning

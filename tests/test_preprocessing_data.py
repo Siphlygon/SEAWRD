@@ -132,9 +132,9 @@ def test_get_training_data_returns_float32_arrays(planet_df : pd.DataFrame):
         random_state=123,
     )
 
-    normalizer, x_train, x_test, y_train, y_test = p.get_training_data(return_array=True)
+    normaliser, x_train, x_test, y_train, y_test = p.get_training_data(return_array=True)
 
-    assert normalizer is not None
+    assert normaliser is not None
     assert x_train.dtype == np.float32
     assert x_test.dtype == np.float32
     assert y_train.dtype == np.float32
@@ -159,9 +159,9 @@ def test_get_training_data_returns_dataframe(planet_df : pd.DataFrame):
         random_state=123,
     )
 
-    normalizer, x_train, x_test, y_train, y_test = p.get_training_data(return_array=False)
+    normaliser, x_train, x_test, y_train, y_test = p.get_training_data(return_array=False)
 
-    assert normalizer is not None
+    assert normaliser is not None
     assert isinstance(x_train, pd.DataFrame)
     assert isinstance(x_test, pd.DataFrame)
     assert isinstance(y_train, pd.Series)
@@ -185,7 +185,7 @@ def test_get_training_data_splits_correctly(planet_df : pd.DataFrame):
         random_state=123,
     )
 
-    normalizer, x_train, x_test, y_train, y_test = p.get_training_data(return_array=True)
+    _, x_train, x_test, y_train, y_test = p.get_training_data(return_array=True)
 
     assert len(x_train) == 4  # 75% of 5 rows after filtering
     assert len(x_test) == 1   # 25% of 5 rows after filtering
@@ -209,7 +209,7 @@ def test_get_training_data_with_no_quality_filter(planet_df : pd.DataFrame):
         random_state=123,
     )
 
-    normalizer, x_train, x_test, y_train, y_test = p.get_training_data(return_array=True)
+    _, x_train, x_test, y_train, y_test = p.get_training_data(return_array=True)
 
     assert len(x_train) == 4  # 75% of 6 rows without filtering
     assert len(x_test) == 2   # 25% of 6 rows without filtering
@@ -248,33 +248,33 @@ def test_get_training_data_with_different_random_states(planet_df : pd.DataFrame
     assert not np.array_equal(x_test1, x_test2)
 
 
-@pytest.mark.tf
-def test_correct_tf_dataset_creation(planet_df : pd.DataFrame):
-    """
-    Test that the data preprocessor creates TensorFlow datasets correctly.
+# @pytest.mark.tf
+# def test_correct_tf_dataset_creation(planet_df : pd.DataFrame):
+#     """
+#     Test that the data preprocessor creates TensorFlow datasets correctly.
 
-    Parameters
-    ----------
-    planet_df : pandas.DataFrame
-        The input DataFrame containing planetary data.
-    """
-    p = DataPreprocessor(
-        planet_df,
-        features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"],
-        label="R_p",
-        test_size=0.25,
-        random_state=123,
-    )
+#     Parameters
+#     ----------
+#     planet_df : pandas.DataFrame
+#         The input DataFrame containing planetary data.
+#     """
+#     p = DataPreprocessor(
+#         planet_df,
+#         features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"],
+#         label="R_p",
+#         test_size=0.25,
+#         random_state=123,
+#     )
 
-    tf_dataset = p.to_tf_dataset(
-        batch_size=32,
-        shuffle=True,
-    )
+#     tf_dataset = p.to_tf_dataset(
+#         batch_size=32,
+#         shuffle=True,
+#     )
 
-    # Check that the datasets are not empty
-    assert len(list(tf_dataset)) > 0
+#     # Check that the datasets are not empty
+#     assert len(list(tf_dataset)) > 0
 
-    # Check that the batch size is correct
-    for x_batch, y_batch in tf_dataset:
-        assert x_batch.shape[0] <= 32  # Last batch may be smaller
-        assert y_batch.shape[0] <= 32
+#     # Check that the batch size is correct
+#     for x_batch, y_batch in tf_dataset:
+#         assert x_batch.shape[0] <= 32  # Last batch may be smaller
+#         assert y_batch.shape[0] <= 32

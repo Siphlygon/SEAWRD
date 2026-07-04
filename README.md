@@ -26,20 +26,21 @@ This is what **S**urrogate **E**mulator for **A**quatic **W**orld **R**adius **D
 
 ## Contributors
 
-SEAWRD is written in Python and was pursued as a part of Code/Astro Workshop 2026 by Group 13. The authors of this package are:
-
-|Ashley Parr|Bishwash Devkota|Fredi Quisipe|Ian Rain-Water|
+SEAWRD as an open-source project was first pursued as a part of Code/Astro Workshop 2026 by Group 13, with members:
+|[Ashley Parr](https://github.com/Siphlygon)|[Bishwash Devkota](https://github.com/bishwashdevkota)|[Fredi Quisipe](https://github.com/fredifqh)|[Ian Rain-Water](https://github.com/Irainw)|
 |-----|----|----|-----|
+
+The code, concepts, configuration, and set-up for the start of SEAWRD came from the following contributors, who are therefore equal authors of this project:
+|[Artyom Aguichine](https://github.com/an0wen)|[Anne Dattilo](https://github.com/aedattilo)|[Hailey Feller](https://github.com/hfeller24)|
+|-----|----|----|
 
 
 ## Attribution
 
-Please cite the DOI if you make use of this software in your research. [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20869608.svg)](https://doi.org/10.5281/zenodo.20869608)
+Please cite the DOI if you make use of this software in your research. [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20869607.svg)](https://doi.org/10.5281/zenodo.20869607)
 
 
 ## Acknowledgements
-
-The authors of this project would like to thank [Artyom Aguichine](https://an0wen.github.io/) for providing the motivation and skeleton code adapted for this Code/Astro project.
 
 The data source file "DNN_data_IOP_Aguichine2021.dat" used in the example usage Jupyter notebook is from Aguichine et al. (2021), and you are encouraged to read their paper found here:
 
