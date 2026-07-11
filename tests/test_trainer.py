@@ -207,7 +207,7 @@ def test_plot_loss_curve_saves_file(tmp_path):
     os.chdir(original_cwd)
 
 
-def trainer_for_quick_training(tmp_path, save_model=True):
+def trainer_for_quick_training(tmp_path, save_model=True, num_models=1, save_ensemble=False):
     """
     Create a DNNTrainer configured for a fast, real training run that saves into a temporary directory.
 
@@ -217,6 +217,12 @@ def trainer_for_quick_training(tmp_path, save_model=True):
         The directory to save models and manifests into.
     save_model : bool, optional
         Whether the trainer should save the best model (and manifest) after training, by default True.
+    num_models : int, optional
+        The number of models to train (DNNTrainer.train_models keeps only the best unless save_ensemble is also
+        enabled), by default 1.
+    save_ensemble : bool, optional
+        Whether every trained model should be saved as a named ensemble member alongside an ensemble manifest, by
+        default False.
 
     Returns
     -------
@@ -225,8 +231,11 @@ def trainer_for_quick_training(tmp_path, save_model=True):
     """
     cfg = SEAWRDConfig.from_dict({
         "model": {"use_normalisation": False, "num_layers": 1, "num_neurons": 4},
-        "training": {"num_epochs": 2, "num_models": 1, "batch_size": 8, "validation_split": 0.2},
-        "output": {"save_model": save_model, "save_plots": False, "model_dir": str(tmp_path), "version": 1},
+        "training": {"num_epochs": 2, "num_models": num_models, "batch_size": 8, "validation_split": 0.2},
+        "output": {
+            "save_model": save_model, "save_plots": False, "model_dir": str(tmp_path), "version": 1,
+            "save_ensemble": save_ensemble,
+        },
     })
     manager = DNNManager.from_config(cfg.model, input_shape=(2,))
     return DNNTrainer(manager, cfg)
@@ -271,6 +280,56 @@ def test_train_models_no_manifest_for_unnamed_arrays(tmp_path):
 
     assert DNNManager.load_manifest(tmp_path, trainer.model_name, trainer.version) is None, (
         "No manifest should be written when feature names cannot be inferred")
+
+
+@pytest.mark.tf
+@pytest.mark.slow
+def test_train_models_saves_ensemble_when_enabled(tmp_path):
+    """
+    Test that train_models saves every trained model as a named ensemble member (plus an ensemble manifest) when
+    output.save_ensemble is enabled, in addition to the single best model.
+    """
+    trainer = trainer_for_quick_training(tmp_path, num_models=3, save_ensemble=True)
+
+    features = pd.DataFrame(np.random.rand(50, 2), columns=["alpha", "beta"])
+    labels = pd.Series(np.random.rand(50), name="R_p")
+    test_features = pd.DataFrame(np.random.rand(10, 2), columns=["alpha", "beta"])
+    test_labels = pd.Series(np.random.rand(10), name="R_p")
+
+    trainer.train_models(features, labels, test_features, test_labels)
+
+    ensemble_manifest = DNNManager.load_ensemble_manifest(tmp_path, trainer.model_name, trainer.version)
+    assert ensemble_manifest is not None, "Expected an ensemble manifest to be written"
+    assert ensemble_manifest["num_members"] == 3
+    assert ensemble_manifest["feature_names"] == ["alpha", "beta"]
+    assert ensemble_manifest["label_name"] == "R_p"
+
+    for member_name in ensemble_manifest["member_names"]:
+        member_model_path = tmp_path / f"{member_name}_v{trainer.version}_model.keras"
+        assert member_model_path.exists(), f"Expected ensemble member model file {member_model_path} to exist"
+
+    # The single best model should still be saved as before, independent of the ensemble
+    assert DNNManager.load_manifest(tmp_path, trainer.model_name, trainer.version) is not None
+
+
+@pytest.mark.tf
+@pytest.mark.slow
+def test_train_models_does_not_save_ensemble_by_default(tmp_path):
+    """
+    Test that train_models does not write any ensemble member files or manifest when output.save_ensemble is left at
+    its default (False).
+    """
+    trainer = trainer_for_quick_training(tmp_path, num_models=3, save_ensemble=False)
+
+    features = pd.DataFrame(np.random.rand(50, 2), columns=["alpha", "beta"])
+    labels = pd.Series(np.random.rand(50), name="R_p")
+    test_features = pd.DataFrame(np.random.rand(10, 2), columns=["alpha", "beta"])
+    test_labels = pd.Series(np.random.rand(10), name="R_p")
+
+    trainer.train_models(features, labels, test_features, test_labels)
+
+    assert DNNManager.load_ensemble_manifest(tmp_path, trainer.model_name, trainer.version) is None
+    assert not any(tmp_path.glob(f"{trainer.model_name}_member*"))
 
 
 def test_validation_split_created_properly():
