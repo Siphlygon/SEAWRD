@@ -1,4 +1,5 @@
 import os
+from typing import Sequence
 
 os.environ["KERAS_BACKEND"] = "tensorflow"
 import keras
@@ -21,8 +22,8 @@ class DNNTrainer:
     """
 
     def __init__(self,
-                 model_manager : DNNManager,
-                 config : SEAWRDConfig):
+                 model_manager: DNNManager,
+                 config: SEAWRDConfig):
         """
         Initialise the DNNTrainer class. This class is responsible for managing the training of a deep neural network
         (DNN) model. It can either load an existing model or generate a new one based on the provided parameters.
@@ -53,9 +54,9 @@ class DNNTrainer:
         self.best_model = keras.Sequential()
         self.best_history = keras.callbacks.History()
         self.best_val = np.inf
-        self.losses : np.ndarray = np.array([])
-        self.val_losses : np.ndarray = np.array([])
-        self.list_num_epoch : np.ndarray = np.array([])
+        self.losses: np.ndarray = np.array([])
+        self.val_losses: np.ndarray = np.array([])
+        self.list_num_epoch: np.ndarray = np.array([])
         self._trained = False
 
 
@@ -101,9 +102,9 @@ class DNNTrainer:
         print(f"val_loss_stdev: {self._round_to_n_sig_figs(np.std(self.val_losses), 5)}")
 
     def plot_loss_curve(self,
-                        log_y : bool = True,
-                        log_x : bool = True,
-                        max_y : float | None = None):
+                        log_y: bool = True,
+                        log_x: bool = True,
+                        max_y: float | None = None):
         """
         Plot the loss curve of the best model after training.
         
@@ -148,18 +149,17 @@ class DNNTrainer:
         plt.show()
         plt.close()
 
-
     # ---------- MAIN TRAINING LOOP ----------
     def _generate_callbacks(self,
-                            use_lr_scheduler : bool = True,
-                            lr_monitor : str = 'val_loss',
-                            lr_factor : float = 0.5,
-                            lr_patience : int = 20,
-                            min_lr : float = 1e-6,
-                            use_early_stopping : bool = True,
-                            early_stopping_monitor : str = 'val_loss',
-                            early_stopping_patience : int = 50,
-                            verbose : int = 1) -> list[keras.callbacks.Callback]:
+                            use_lr_scheduler: bool = True,
+                            lr_monitor: str = 'val_loss',
+                            lr_factor: float = 0.5,
+                            lr_patience: int = 20,
+                            min_lr: float = 1e-6,
+                            use_early_stopping: bool = True,
+                            early_stopping_monitor: str = 'val_loss',
+                            early_stopping_patience: int = 50,
+                            verbose: int = 1) -> list[keras.callbacks.Callback]:
         """
         Generate a list of callbacks for training a Keras model. These callbacks help in monitoring and controlling the
         training process.
@@ -250,11 +250,11 @@ class DNNTrainer:
         return errors
 
     def _train_single_model(self,
-                           model : keras.Model,
-                           train_features : np.ndarray | pd.DataFrame,
-                           train_labels : np.ndarray | pd.Series,
-                           val_features : np.ndarray | pd.DataFrame,
-                           val_labels : np.ndarray | pd.Series) -> keras.callbacks.History:
+                            model: keras.Model,
+                            train_features: np.ndarray | pd.DataFrame,
+                            train_labels: np.ndarray | pd.Series,
+                            val_features: np.ndarray | pd.DataFrame,
+                            val_labels: np.ndarray | pd.Series) -> keras.callbacks.History:
         """
         Train the provided model using the specified random seed for reproducibility. The training process involves
         compiling the model, fitting it to the training data, and applying callbacks for learning rate adjustment and
@@ -310,7 +310,9 @@ class DNNTrainer:
                      input_features: np.ndarray | pd.DataFrame,
                      input_labels: np.ndarray | pd.Series,
                      test_features: np.ndarray | pd.DataFrame,
-                     test_labels: np.ndarray | pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                     test_labels: np.ndarray | pd.Series,
+                     feature_names: Sequence[str] | None = None,
+                     label_name: str | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Train multiple models with different random initialisations and keep the best one based on validation loss. This
         method also collects statistics about each model's performance.
@@ -326,7 +328,14 @@ class DNNTrainer:
             The features of the test dataset.
         test_labels : np.ndarray | pd.Series
             The labels of the test dataset.
-        
+        feature_names : Sequence[str] | None, optional
+            The names of the input features, in training order. When provided (or inferable from a DataFrame passed as
+            ``input_features``), a manifest is saved alongside the best model so it can later be paired with new data
+            for prediction. By default None.
+        label_name : str | None, optional
+            The name of the label column being predicted, recorded in the manifest. Inferred from a labelled
+            ``input_labels`` Series when not given. By default None.
+
         Returns
         -------
         pred_means : np.ndarray
@@ -338,6 +347,13 @@ class DNNTrainer:
         val_losses : np.ndarray
             The validation losses for each model.
         """
+        # Infer the feature/label names from the inputs when they were not supplied explicitly, so a manifest can be
+        # written even when the caller simply hands over a labelled DataFrame/Series (the common notebook workflow).
+        if feature_names is None and isinstance(input_features, pd.DataFrame):
+            feature_names = list(input_features.columns)
+        if label_name is None and isinstance(input_labels, pd.Series):
+            label_name = input_labels.name
+
         x_train, y_train, x_val, y_val = create_validation_split(input_features,
                                                                  input_labels,
                                                                  self.training_config.validation_split)
@@ -391,7 +407,9 @@ class DNNTrainer:
                                                 self.best_history,
                                                 self.model_dir,
                                                 self.model_name,
-                                                self.version)
+                                                self.version,
+                                                feature_names=feature_names,
+                                                label_name=label_name)
 
         # saves the statistics about all models
         self.losses = losses
