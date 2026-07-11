@@ -3,7 +3,7 @@ SEAWRD
 
 Welcome to ``SEAWRD``'s documentation! This project is a Python package for training and evaluating surrogate models, primarily for simulating expensive exoplanet simulations. It provides tools for preprocessing data, training surrogate models, and evaluating their performance. The package is designed to be user-friendly and flexible, allowing researchers to easily integrate it into their workflows.
 
-``SEAWRD`` was created during `Code/Astro <https://semaphorep.github.io/codeastro/>`_ 2026, and is still under active development. We welcome contributions from the community, and encourage users to report issues and submit pull requests on our `GitHub repository <https://github.com/Siphlygon/SEAWRD>`_.
+``SEAWRD`` was created during `Code/Astro <https://semaphorep.github.io/codeastro/>`_ 2026, and is still under active development. We welcome contributions from the community, and encourage users to report issues and submit pull requests on our `GitHub repository <https://github.com/Siphlygon/SEAWRD>`_. For example usage, please view the example usage Jupyter notebook `seawrd.ipynb`.
 
 
 Accreditation
@@ -25,6 +25,7 @@ User Guides
    installation
    cuda
    useful_commands
+   usage_scripts
 
 
 Public API

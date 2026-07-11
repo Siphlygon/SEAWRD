@@ -207,6 +207,72 @@ def test_plot_loss_curve_saves_file(tmp_path):
     os.chdir(original_cwd)
 
 
+def trainer_for_quick_training(tmp_path, save_model=True):
+    """
+    Create a DNNTrainer configured for a fast, real training run that saves into a temporary directory.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        The directory to save models and manifests into.
+    save_model : bool, optional
+        Whether the trainer should save the best model (and manifest) after training, by default True.
+
+    Returns
+    -------
+    DNNTrainer
+        A DNNTrainer instance with a small, fast training configuration.
+    """
+    cfg = SEAWRDConfig.from_dict({
+        "model": {"use_normalisation": False, "num_layers": 1, "num_neurons": 4},
+        "training": {"num_epochs": 2, "num_models": 1, "batch_size": 8, "validation_split": 0.2},
+        "output": {"save_model": save_model, "save_plots": False, "model_dir": str(tmp_path), "version": 1},
+    })
+    manager = DNNManager.from_config(cfg.model, input_shape=(2,))
+    return DNNTrainer(manager, cfg)
+
+
+@pytest.mark.tf
+@pytest.mark.slow
+def test_train_models_writes_manifest_with_inferred_names(tmp_path):
+    """
+    Test that train_models infers feature and label names from a DataFrame/Series and writes a manifest alongside the
+    saved model.
+    """
+    trainer = trainer_for_quick_training(tmp_path)
+
+    features = pd.DataFrame(np.random.rand(50, 2), columns=["alpha", "beta"])
+    labels = pd.Series(np.random.rand(50), name="R_p")
+    test_features = pd.DataFrame(np.random.rand(10, 2), columns=["alpha", "beta"])
+    test_labels = pd.Series(np.random.rand(10), name="R_p")
+
+    trainer.train_models(features, labels, test_features, test_labels)
+
+    manifest = DNNManager.load_manifest(tmp_path, trainer.model_name, trainer.version)
+    assert manifest is not None, "Expected a manifest to be written during training"
+    assert manifest["feature_names"] == ["alpha", "beta"], "Feature names should be inferred from the DataFrame columns"
+    assert manifest["label_name"] == "R_p", "Label name should be inferred from the Series name"
+
+
+@pytest.mark.tf
+@pytest.mark.slow
+def test_train_models_no_manifest_for_unnamed_arrays(tmp_path):
+    """
+    Test that train_models does not write a manifest when given bare arrays with no feature names to infer.
+    """
+    trainer = trainer_for_quick_training(tmp_path)
+
+    features = np.random.rand(50, 2).astype(np.float32)
+    labels = np.random.rand(50).astype(np.float32)
+    test_features = np.random.rand(10, 2).astype(np.float32)
+    test_labels = np.random.rand(10).astype(np.float32)
+
+    trainer.train_models(features, labels, test_features, test_labels)
+
+    assert DNNManager.load_manifest(tmp_path, trainer.model_name, trainer.version) is None, (
+        "No manifest should be written when feature names cannot be inferred")
+
+
 def test_validation_split_created_properly():
     """
     Test that the create_validation_split method of utils (used within DNNTrainer) creates a validation split correctly

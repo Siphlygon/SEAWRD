@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 
 os.environ.setdefault("KERAS_BACKEND", "tensorflow")
-from pathlib import Path
-from typing import TYPE_CHECKING
 import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,9 @@ def validate_keras_field(field_name: str, field_type: str):
     """
     Validate that Keras can resolve a given field identifier.
     
-    Keras provides a mechanism to retrieve various components (like losses, metrics, and activations) using string identifiers. This function checks if the provided field identifier can be resolved by Keras for the specified field type.
+    Keras provides a mechanism to retrieve various components (like losses, metrics, and activations) using string
+    identifiers. This function checks if the provided field identifier can be resolved by Keras for the specified field
+    type.
 
     Parameters
     ----------
@@ -76,7 +78,7 @@ def fit_normaliser(train_features: pd.DataFrame | np.ndarray) -> "keras.layers.N
     return normaliser
 
 
-def load_npz_bundle(bundle_path: Path) -> dict[str, np.ndarray]:
+def load_npz_bundle(bundle_path: Path) -> dict[str, Any]:
     """
     Load a NumPy .npz bundle containing training and testing features and labels.
 
@@ -87,13 +89,15 @@ def load_npz_bundle(bundle_path: Path) -> dict[str, np.ndarray]:
 
     Returns
     -------
-    dict[str, np.ndarray]
-        A dictionary containing the loaded arrays.
+    dict[str, Any]
+        A dictionary containing the loaded arrays under the required keys, plus optional 'feature_names' (a list of str)
+        and 'label_name' (a str) when the bundle records them. Bundles written before these were added simply omit them.
 
     Raises
     ------
     ValueError
-        If the bundle is missing any of the required keys: 'input_features', 'input_labels', 'test_features', 'test_labels'.
+        If the bundle is missing any of the required keys: 'input_features', 'input_labels', 'test_features',
+        'test_labels'.
     """
     bundle = np.load(bundle_path, allow_pickle=False)
     required_keys = {
@@ -109,7 +113,16 @@ def load_npz_bundle(bundle_path: Path) -> dict[str, np.ndarray]:
             f"Training bundle {bundle_path} is missing keys: {sorted(missing_keys)}"
         )
 
-    return {key: np.asarray(bundle[key]) for key in required_keys}
+    result: dict[str, Any] = {key: np.asarray(bundle[key]) for key in required_keys}
+
+    # Optional feature/label metadata, used downstream to write a prediction manifest. Convert from the numpy string
+    # arrays used for storage back into plain Python types for convenient use by callers.
+    if "feature_names" in bundle.files:
+        result["feature_names"] = [str(name) for name in bundle["feature_names"]]
+    if "label_name" in bundle.files:
+        result["label_name"] = str(bundle["label_name"])
+
+    return result
 
 
 def create_validation_split(input_features: np.ndarray | pd.DataFrame,

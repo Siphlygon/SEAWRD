@@ -35,6 +35,10 @@ license-files = ["LICEN[CS]E.*"]
 [project.urls]
 Repository = "https://github.com/Siphlygon/SEAWRD"
 
+[project.scripts]
+seawrd-train = "seawrd.cli.train:main"
+seawrd-predict = "seawrd.cli.predict:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["seawrd*"]

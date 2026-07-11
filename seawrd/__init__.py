@@ -30,7 +30,8 @@ from .config import (
 from .config_manager import ConfigManager
 
 
-# Expose configuration objects only to avoid heavier loading of tensorflow/keras in other modules
+# Expose configuration objects eagerly; heavier objects that pull in tensorflow/keras are loaded lazily via __getattr__
+# below so that ``import seawrd`` stays cheap for config-only use.
 __all__ = [
     "__version__",
     "SEAWRDConfig",
@@ -41,4 +42,23 @@ __all__ = [
     "DeviceConfig",
     "OutputConfig",
     "ConfigManager",
+    "Predictor",
 ]
+
+
+def __getattr__(name: str):
+    """
+    Lazily import keras-backed objects on first access.
+
+    Accessing ``seawrd.Predictor`` imports the predictor module (and therefore tensorflow/keras) only when it is
+    actually needed, keeping a plain ``import seawrd`` lightweight for configuration-only workflows.
+    """
+    if name == "Predictor":
+        from .predictor import Predictor
+
+        return Predictor
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)
