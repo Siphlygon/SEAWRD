@@ -19,15 +19,15 @@ try:
 except ModuleNotFoundError:  # Python 3.10 fallback
     import tomli as tomllib
 
-from .bootstrap import load_effective_raw_config, set_device_env
-from .device_selection import choose_training_device, DeviceChoice
-from .utils import load_npz_bundle, create_validation_split, fit_normaliser, get_logger
-
-from .config import SEAWRDConfig
-
 # Disable TensorFlow logging to avoid cluttering the output with warnings and info messages during training
 # This will not stop error messages e.g., from not being able to find CUDA
 import absl.logging
+
+from .bootstrap import load_effective_raw_config, set_device_env
+from .config import SEAWRDConfig
+from .device_selection import DeviceChoice, choose_training_device
+from .utils import create_validation_split, fit_normaliser, get_logger, load_npz_bundle
+
 absl.logging.set_verbosity(absl.logging.ERROR)
 absl.logging.set_stderrthreshold(absl.logging.ERROR)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -121,6 +121,8 @@ def run_training(config: Any,
                  input_labels: np.ndarray,
                  test_features: np.ndarray,
                  test_labels: np.ndarray,
+                 feature_names: Sequence[str] | None = None,
+                 label_name: str | None = None,
                  ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Run the full training pipeline after the training device has been selected.
@@ -137,6 +139,11 @@ def run_training(config: Any,
         The test features.
     test_labels : np.ndarray
         The test labels.
+    feature_names : Sequence[str] | None, optional
+        The names of the input features, in training order. When provided, a prediction manifest is saved alongside the
+        model. Typically threaded through from the data bundle. By default None.
+    label_name : str | None, optional
+        The name of the label column being predicted, recorded in the manifest. By default None.
 
     Returns
     -------
@@ -166,6 +173,8 @@ def run_training(config: Any,
         input_labels=input_labels,
         test_features=test_features,
         test_labels=test_labels,
+        feature_names=feature_names,
+        label_name=label_name,
     )
 
     return results
@@ -273,6 +282,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         input_labels=bundle["input_labels"],
         test_features=bundle["test_features"],
         test_labels=bundle["test_labels"],
+        feature_names=bundle["feature_names"],
+        label_name=bundle["label_name"],
     )
 
     return 0

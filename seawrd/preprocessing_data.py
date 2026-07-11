@@ -339,12 +339,23 @@ class DataPreprocessor:
             The file path where the .npz file will be saved.
         """
         _, features, test_features, labels, test_labels = self.get_training_data(return_array=True)
+
+        # Persist the feature/label names alongside the arrays so a downstream training run (e.g. the CLI in
+        # seawrd.train) can write a prediction manifest without re-deriving them from the original data file.
+        extra: dict[str, np.ndarray] = {}
+        if self.feature_names_ is not None:
+            extra["feature_names"] = np.asarray(self.feature_names_, dtype=np.str_)
+        if self.label_name_ is not None:
+            extra["label_name"] = np.asarray(self.label_name_, dtype=np.str_)
+
         np.savez(
             path,
             input_features=features,
             test_features=test_features,
             input_labels=labels,
             test_labels=test_labels,
+            allow_pickle=False,
+            **extra,
         )
 
 
