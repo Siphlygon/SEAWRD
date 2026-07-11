@@ -366,6 +366,93 @@ class DNNManager:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
+    def save_ensemble_manifest(self,
+                               model_dir: Path | str,
+                               model_name: str,
+                               version: int,
+                               member_names: Sequence[str],
+                               feature_names: Sequence[str] | None = None,
+                               label_name: str | None = None) -> Path:
+        """
+        Write a JSON manifest listing the saved ensemble members for a model version.
+
+        Each member is an ordinary model saved via :meth:`save_model_version` under its own name (with its own
+        per-member manifest); this ensemble manifest just records which member names belong together, so
+        ``seawrd.predictor.EnsemblePredictor`` can find and load them all.
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the ensemble's parent model (i.e. the same name the single best model is saved under).
+        version : int
+            The version number shared by the ensemble and the best model it was drawn from.
+        member_names : Sequence[str]
+            The model names of the saved ensemble members, in the order they should be reported.
+        feature_names : Sequence[str] | None, optional
+            The names of the input features the ensemble was trained on, by default None.
+        label_name : str | None, optional
+            The name of the label column the ensemble predicts, by default None.
+
+        Returns
+        -------
+        Path
+            The path to the written ensemble manifest file.
+        """
+        if isinstance(model_dir, str):
+            model_dir = Path(model_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        path = model_dir / f"{model_name}_v{version}_ensemble.json"
+
+        manifest = {
+            "model_name": model_name,
+            "version": version,
+            "member_names": list(member_names),
+            "num_members": len(member_names),
+            "feature_names": list(feature_names) if feature_names else None,
+            "label_name": label_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+
+        print(f"Ensemble manifest: {path}")
+        return path
+
+    @staticmethod
+    def load_ensemble_manifest(model_dir: Path | str,
+                               model_name: str,
+                               version: int) -> dict[str, Any] | None:
+        """
+        Load the JSON ensemble manifest for a model version, if one exists.
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the ensemble's parent model.
+        version : int
+            The version number of the ensemble.
+
+        Returns
+        -------
+        dict[str, Any] | None
+            The parsed ensemble manifest dictionary, or None if no ensemble manifest file is present.
+        """
+        if isinstance(model_dir, str):
+            model_dir = Path(model_dir)
+
+        path = model_dir / f"{model_name}_v{version}_ensemble.json"
+        if not path.exists():
+            return None
+
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
     def get_latest_version(self,
                            model_dir: Path | str,
                            model_name: str,
