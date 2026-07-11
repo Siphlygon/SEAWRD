@@ -23,10 +23,10 @@ except ModuleNotFoundError:  # Python 3.10 fallback
 # This will not stop error messages e.g., from not being able to find CUDA
 import absl.logging
 
-from .bootstrap import load_effective_raw_config, set_device_env
-from .config import SEAWRDConfig
-from .device_selection import DeviceChoice, choose_training_device
-from .utils import create_validation_split, fit_normaliser, get_logger, load_npz_bundle
+from ..bootstrap import load_effective_raw_config, set_device_env
+from ..config import SEAWRDConfig
+from ..device_selection import DeviceChoice, choose_training_device
+from ..utils import create_validation_split, fit_normaliser, get_logger, load_npz_bundle
 
 absl.logging.set_verbosity(absl.logging.ERROR)
 absl.logging.set_stderrthreshold(absl.logging.ERROR)
@@ -156,8 +156,8 @@ def run_training(config: Any,
     test_labels = np.asarray(test_labels, dtype=np.float32).reshape(-1)
 
     # Only now do we import keras by importing model or trainer
-    from .model import DNNManager
-    from .trainer import DNNTrainer
+    from ..model import DNNManager
+    from ..trainer import DNNTrainer
 
     normaliser = fit_normaliser(input_features) if config.model.use_normalisation else None
 
@@ -229,7 +229,7 @@ def _load_files_from_args(args: argparse.Namespace) -> tuple[dict[str, Any], dic
     tuple[dict[str, Any], dict[str, np.ndarray]]
         The loaded configuration dictionary and data bundle.
     """
-    default_config_path = Path(__file__).with_name("seawrd_default.toml")
+    default_config_path = Path(__file__).resolve().parents[1] / "seawrd_default.toml"
     if args.config is not None:
         effective_raw_config = load_effective_raw_config(args.config, default_config_path)
         logger.info("Loaded custom configuration from %s.", args.config)

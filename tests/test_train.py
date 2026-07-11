@@ -11,7 +11,7 @@ import numpy as np
 import tomli_w
 import pytest
 
-from seawrd import train
+from seawrd.cli import train
 from seawrd.config import SEAWRDConfig
 from seawrd.device_selection import DeviceChoice
 from seawrd.bootstrap import load_effective_raw_config

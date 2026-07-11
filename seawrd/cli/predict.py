@@ -2,7 +2,7 @@
 Prediction entrypoint for SEAWRD.
 
 Loads a trained model (and its manifest, if present) and runs it on a table of new planetary data via
-seawrd.predictor.Predictor. This is the inference counterpart to seawrd.train.
+seawrd.predictor.Predictor. This is the inference counterpart to seawrd.cli.train.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import pandas as pd
 
 os.environ["KERAS_BACKEND"] = "tensorflow"
 
-from .utils import get_logger
+from ..utils import get_logger
 
 logger = get_logger("seawrd.predict")
 
@@ -50,7 +50,7 @@ def run_prediction(input_df: pd.DataFrame,
         A copy of the input DataFrame with a prediction column appended.
     """
     # Only now do we import keras by importing predictor
-    from .predictor import Predictor
+    from ..predictor import Predictor
 
     predictor = Predictor.from_saved(model_dir, model_name, version)
 
