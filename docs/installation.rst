@@ -20,10 +20,18 @@ Then consider changing the default configuration file `seawrd_default.toml` to y
 
 .. code-block:: bash
 
-    python -m seawrd.train data.npz
+    seawrd-train data.npz
 
 or with a custom configuration file:
 
 .. code-block:: bash
 
-    python -m seawrd.train data.npz --config custom_config.toml
+    seawrd-train data.npz --config custom_config.toml
+
+Once a model has been trained and saved, you can run predictions on new data with:
+
+.. code-block:: bash
+
+    seawrd-predict new_data.dat --model-name <model_name> --model-dir models/
+
+Both commands can also be run without installing the console scripts, via ``python -m seawrd.cli.train`` and ``python -m seawrd.cli.predict`` respectively.
