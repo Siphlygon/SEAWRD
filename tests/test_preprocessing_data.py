@@ -36,6 +36,30 @@ def test_prepare_derives_radius_and_filters_quality_rows(planet_df : pd.DataFram
                                err_msg="Derived radius R_p does not match the sum of R_a and R_b.")
 
 
+def test_save_to_npz_persists_feature_and_label_names(planet_df : pd.DataFrame, tmp_path):
+    """
+    Test that save_to_npz records the feature names and label name alongside the data arrays, so a downstream training
+    run can write a prediction manifest.
+
+    Parameters
+    ----------
+    planet_df : pandas.DataFrame
+        The input DataFrame containing planetary data.
+    tmp_path : pathlib.Path
+        A temporary directory provided by pytest.
+    """
+    features = ["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"]
+    # normalise=False keeps this test free of any keras dependency
+    p = DataPreprocessor(planet_df, features=features, label="R_p", normalise=False)
+
+    path = tmp_path / "bundle.npz"
+    p.save_to_npz(path)
+
+    with np.load(path, allow_pickle=False) as bundle:
+        assert [str(name) for name in bundle["feature_names"]] == features, "Feature names were not persisted in order"
+        assert str(bundle["label_name"]) == "R_p", "Label name was not persisted"
+
+
 def test_prepare_does_not_mutate_input_dataframe(planet_df : pd.DataFrame):
     """
     Test that the data preprocessor does not mutate the input DataFrame.

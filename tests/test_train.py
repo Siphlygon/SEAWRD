@@ -3,6 +3,7 @@ Unit tests for the train module entrypoint which allows for benchmarking device 
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -277,3 +278,98 @@ def test_load_npz_bundle_raises_value_error_for_missing_keys(tmp_path: Path):
     # Attempt to load the invalid bundle and check for ValueError
     with pytest.raises(ValueError) as exc_info:
         train.load_npz_bundle(bundle_path)
+
+
+def _write_bundle(bundle_path: Path, with_names: bool) -> None:
+    """
+    Write a minimal .npz training bundle, optionally including feature/label name metadata.
+
+    Parameters
+    ----------
+    bundle_path : Path
+        Where to write the bundle.
+    with_names : bool
+        Whether to include 'feature_names' and 'label_name' arrays.
+    """
+    arrays = {
+        "input_features": np.zeros((10, 2), dtype=np.float32),
+        "input_labels": np.zeros((10,), dtype=np.float32),
+        "test_features": np.zeros((5, 2), dtype=np.float32),
+        "test_labels": np.zeros((5,), dtype=np.float32),
+    }
+    if with_names:
+        arrays["feature_names"] = np.asarray(["a", "b"], dtype=np.str_)
+        arrays["label_name"] = np.asarray("R_p", dtype=np.str_)
+
+    np.savez(bundle_path, **arrays)
+
+
+def test_load_npz_bundle_surfaces_feature_and_label_names(tmp_path: Path):
+    """
+    Test that load_npz_bundle returns feature names as a list of str and the label name as a str when present.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        A temporary directory provided by pytest.
+    """
+    bundle_path = tmp_path / "bundle.npz"
+    _write_bundle(bundle_path, with_names=True)
+
+    bundle = train.load_npz_bundle(bundle_path)
+
+    assert bundle["feature_names"] == ["a", "b"], "Feature names should be returned as a plain list of str"
+    assert bundle["label_name"] == "R_p", "Label name should be returned as a plain str"
+
+
+def test_load_npz_bundle_omits_names_when_absent(tmp_path: Path):
+    """
+    Test that load_npz_bundle omits the optional name keys for bundles that do not record them (backward compatibility).
+
+    Parameters
+    ----------
+    tmp_path : Path
+        A temporary directory provided by pytest.
+    """
+    bundle_path = tmp_path / "bundle.npz"
+    _write_bundle(bundle_path, with_names=False)
+
+    bundle = train.load_npz_bundle(bundle_path)
+
+    assert "feature_names" not in bundle, "feature_names should be absent for legacy bundles"
+    assert "label_name" not in bundle, "label_name should be absent for legacy bundles"
+
+
+@pytest.mark.tf
+@pytest.mark.slow
+def test_run_training_writes_manifest_from_bundle_names(tmp_path: Path):
+    """
+    Test that run_training writes a prediction manifest when feature/label names are threaded through from the bundle.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        A temporary directory provided by pytest.
+    """
+    cfg = SEAWRDConfig.from_dict({
+        "model": {"num_layers": 1, "num_neurons": 2, "use_normalisation": False},
+        "training": {"num_epochs": 1, "batch_size": 1, "validation_split": 0.2, "num_models": 1},
+        "output": {"save_model": True, "save_plots": False, "model_dir": str(tmp_path), "version": 1},
+    })
+
+    train.run_training(
+        config=cfg,
+        input_features=np.zeros((10, 2), dtype=np.float32),
+        input_labels=np.zeros((10,), dtype=np.float32),
+        test_features=np.zeros((5, 2), dtype=np.float32),
+        test_labels=np.zeros((5,), dtype=np.float32),
+        feature_names=["a", "b"],
+        label_name="R_p",
+    )
+
+    manifests = list(tmp_path.glob("*_manifest.json"))
+    assert len(manifests) == 1, f"Expected exactly one manifest to be written, found {len(manifests)}"
+
+    manifest = json.loads(manifests[0].read_text())
+    assert manifest["feature_names"] == ["a", "b"], "Manifest should record the threaded feature names"
+    assert manifest["label_name"] == "R_p", "Manifest should record the threaded label name"
