@@ -366,6 +366,10 @@ class DNNTrainer:
         val_losses = np.zeros(num_models)
         list_num_epoch = np.zeros(num_models)
 
+        # Only retained when output.save_ensemble is enabled; keeps every trained model (not just the best) so an
+        # EnsemblePredictor can later report per-sample uncertainty from disagreement between ensemble members.
+        ensemble_members: list[tuple[keras.Model, keras.callbacks.History]] = []
+
         for seed in range(num_models):
             print(f"Training model {seed}/{num_models}:")
 
@@ -381,6 +385,9 @@ class DNNTrainer:
                                                train_labels=y_train,
                                                val_features=x_val,
                                                val_labels=y_val)
+
+            if self.output_config.save_ensemble:
+                ensemble_members.append((new_model, history))
 
             # records the best
             val_min = min(history.history['val_loss'])
@@ -410,6 +417,25 @@ class DNNTrainer:
                                                 self.version,
                                                 feature_names=feature_names,
                                                 label_name=label_name)
+
+            # also save every trained model as a named ensemble member, plus a manifest tying them together
+            if self.output_config.save_ensemble and ensemble_members:
+                member_names = [f"{self.model_name}_member{seed}" for seed in range(len(ensemble_members))]
+                for member_name, (member_model, member_history) in zip(member_names, ensemble_members):
+                    self.model_manager.save_model_version(member_model,
+                                                        member_history,
+                                                        self.model_dir,
+                                                        member_name,
+                                                        self.version,
+                                                        feature_names=feature_names,
+                                                        label_name=label_name)
+
+                self.model_manager.save_ensemble_manifest(self.model_dir,
+                                                          self.model_name,
+                                                          self.version,
+                                                          member_names=member_names,
+                                                          feature_names=feature_names,
+                                                          label_name=label_name)
 
         # saves the statistics about all models
         self.losses = losses

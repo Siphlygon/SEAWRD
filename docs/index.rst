@@ -39,6 +39,8 @@ Public API
    preprocessing_data
    model
    trainer
+   cross_validation
+   evaluation
    device_selection
    device_benchmark_worker
    bootstrap

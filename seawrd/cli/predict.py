@@ -25,7 +25,9 @@ def run_prediction(input_df: pd.DataFrame,
                    model_dir: Path | str,
                    model_name: str,
                    version: int | None = None,
-                   prediction_column: str | None = None) -> pd.DataFrame:
+                   prediction_column: str | None = None,
+                   ensemble: bool = False,
+                   uncertainty_column: str | None = None) -> pd.DataFrame:
     """
     Load a saved model and run predictions on a DataFrame of input features.
 
@@ -37,18 +39,42 @@ def run_prediction(input_df: pd.DataFrame,
     model_dir : Path | str
         The directory containing the saved model.
     model_name : str
-        The name of the saved model to load.
+        The name of the saved model to load. For an ensemble, this is the ensemble's parent model name (the same
+        name the single best model was saved under).
     version : int | None, optional
         The version of the model to load. If None, the latest available version is loaded. By default None.
     prediction_column : str | None, optional
         The name of the column to store predictions in. Defaults to ``"{label_name}_pred"`` when the model's manifest
         records a label name, otherwise ``"prediction"``. By default None.
+    ensemble : bool, optional
+        Whether to load an ensemble of models (saved via ``output.save_ensemble=true``) and predict with them,
+        adding a per-sample uncertainty column alongside the prediction. By default False (loads a single model).
+    uncertainty_column : str | None, optional
+        Only used when ``ensemble`` is True. The name of the column to store the per-sample uncertainty (standard
+        deviation across ensemble members) in. Defaults to ``"{label_name}_std"`` when known, otherwise
+        ``"uncertainty"``. By default None.
 
     Returns
     -------
     pd.DataFrame
-        A copy of the input DataFrame with a prediction column appended.
+        A copy of the input DataFrame with prediction (and, for an ensemble, uncertainty) columns appended.
     """
+    if ensemble:
+        # Only now do we import keras by importing predictor
+        from ..predictor import EnsemblePredictor
+
+        predictor = EnsemblePredictor.from_saved(model_dir, model_name, version)
+
+        if predictor.feature_names is None:
+            logger.warning(
+                "No manifest found for ensemble '%s'; using all input columns in the order given. "
+                "Predictions will be unreliable if this does not match the training feature order.",
+                model_name,
+            )
+
+        return predictor.predict_dataframe(
+            input_df, prediction_column=prediction_column, uncertainty_column=uncertainty_column)
+
     # Only now do we import keras by importing predictor
     from ..predictor import Predictor
 
@@ -110,6 +136,19 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         default=None,
         help="Name of the output prediction column (default: '{label}_pred' if known, otherwise 'prediction').",
     )
+    parser.add_argument(
+        "--ensemble",
+        action="store_true",
+        help="Load an ensemble of models (saved via output.save_ensemble=true) instead of a single model, adding a "
+             "per-sample uncertainty column alongside the prediction.",
+    )
+    parser.add_argument(
+        "--uncertainty-column",
+        type=str,
+        default=None,
+        help="Only used with --ensemble. Name of the output uncertainty column (default: '{label}_std' if known, "
+             "otherwise 'uncertainty').",
+    )
     return parser
 
 
@@ -135,6 +174,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         model_name=args.model_name,
         version=args.version,
         prediction_column=args.prediction_column,
+        ensemble=args.ensemble,
+        uncertainty_column=args.uncertainty_column,
     )
 
     if args.output_path is not None:
