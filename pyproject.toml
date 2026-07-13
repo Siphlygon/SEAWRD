@@ -19,7 +19,7 @@ dependencies = [
     "ipykernel"
 ]
 authors = [
-  {name = "Ashley Parr", email = "amparr83@gmail.com"},
+  {name = "Ashley Parr", email = "ashley.parr@protonmail.com"},
   {name = "Bishwash Devkota", email = "bishwashdevkota567@gmail.com"},
   {name = "Fredi Quispe Huaynasi", email = "fredifqh@gmail.com"},
   {name = "Ian Rain-Water", email = "irainw@stanford.edu"},
