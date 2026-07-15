@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Iterator, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -250,6 +250,72 @@ class DataPreprocessor:
             test_df[self.label_name_].copy(),
         )
 
+    def k_fold_splits(self,
+                      n_splits: int,
+                      shuffle: bool = True,
+                      random_state: Optional[int] = None,
+                      ) -> Iterator[Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]]:
+        """
+        Yield n_splits (train, validation) folds over the full prepared dataset.
+
+        Unlike split(), which reserves a single held-out test set, this partitions the whole prepared dataset into
+        n_splits roughly equal folds and, for each one in turn, yields it as the validation set with the remaining
+        folds concatenated as the training set. Cross-validating over these folds gives a more robust estimate of
+        how well a model generalises than relying on a single train/test split, at the cost of training n_splits
+        times as many models.
+
+        Parameters
+        ----------
+        n_splits : int
+            The number of folds to split the data into. Must be at least 2 and at most the number of rows.
+        shuffle : bool, optional
+            Whether to shuffle the data before splitting into folds, by default True.
+        random_state : Optional[int], optional
+            Random seed for the shuffle, by default None. Note this is independent of self.random_state, which is
+            only used by split().
+
+        Yields
+        ------
+        train_features : pd.DataFrame
+            Training features for this fold.
+        val_features : pd.DataFrame
+            Validation features for this fold.
+        train_labels : pd.Series
+            Training labels for this fold.
+        val_labels : pd.Series
+            Validation labels for this fold.
+
+        Raises
+        ------
+        ValueError
+            If n_splits is less than 2, or greater than the number of available rows.
+        """
+        if n_splits < 2:
+            raise ValueError("n_splits must be >= 2")
+        if n_splits > len(self.df):
+            raise ValueError(f"n_splits ({n_splits}) cannot exceed the number of available rows ({len(self.df)})")
+
+        indices = np.arange(len(self.df))
+        if shuffle:
+            rng = np.random.default_rng(random_state)
+            rng.shuffle(indices)
+
+        fold_indices = np.array_split(indices, n_splits)
+
+        for i in range(n_splits):
+            val_idx = fold_indices[i]
+            train_idx = np.concatenate([fold_indices[j] for j in range(n_splits) if j != i])
+
+            train_df = self.df.iloc[train_idx]
+            val_df = self.df.iloc[val_idx]
+
+            yield (
+                train_df[self.feature_names_].copy(),
+                val_df[self.feature_names_].copy(),
+                train_df[self.label_name_].copy(),
+                val_df[self.label_name_].copy(),
+            )
+
 
     # ---------- PUBLIC METHODS ----------
     def get_training_data(self,
@@ -339,12 +405,23 @@ class DataPreprocessor:
             The file path where the .npz file will be saved.
         """
         _, features, test_features, labels, test_labels = self.get_training_data(return_array=True)
+
+        # Persist the feature/label names alongside the arrays so a downstream training run (e.g. the CLI in
+        # seawrd.cli.train) can write a prediction manifest without re-deriving them from the original data file.
+        extra: dict[str, np.ndarray] = {}
+        if self.feature_names_ is not None:
+            extra["feature_names"] = np.asarray(self.feature_names_, dtype=np.str_)
+        if self.label_name_ is not None:
+            extra["label_name"] = np.asarray(self.label_name_, dtype=np.str_)
+
         np.savez(
             path,
             input_features=features,
             test_features=test_features,
             input_labels=labels,
             test_labels=test_labels,
+            allow_pickle=False,
+            **extra,
         )
 
 

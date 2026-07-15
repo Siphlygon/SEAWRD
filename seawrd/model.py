@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import json
 import os
 import pickle
 import re
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 os.environ["KERAS_BACKEND"] = "tensorflow"
 
 import keras
 import numpy as np
 
-from .config import ModelConfig, CompileConfig
+from .config import CompileConfig, ModelConfig
 
 
 class DNNManager:
@@ -19,10 +21,10 @@ class DNNManager:
     A class to manage the creation, saving, and loading of a Deep Neural Network (DNN) model using Keras.
     """
     def __init__(self,
-                 model : keras.Sequential,
-                 history : keras.callbacks.History | None,
-                 version : int,
-                 model_name : str):
+                 model: keras.Sequential,
+                 history: keras.callbacks.History | None,
+                 version: int,
+                 model_name: str):
         """
         Initialises the DNN class. Depending on the parameters, it either loads an existing model or generates a new one
         and saves it. The model is then compiled and ready for training or evaluation.
@@ -119,9 +121,9 @@ class DNNManager:
 
     @classmethod
     def from_previous_model(cls,
-                           model_dir : Path | str,
-                           model_name : str,
-                           version : int | None = None) -> DNNManager:
+                           model_dir: Path | str,
+                           model_name: str,
+                           version: int | None = None) -> DNNManager:
         """
         Loads a previously saved Keras model from the specified path and creates a DNNManager instance with the loaded
         model, history, and version.
@@ -144,11 +146,10 @@ class DNNManager:
         model, history, version = temp_manager.get_model_version(model_dir, model_name, version)
         return cls(model=model, history=history, version=version, model_name=model_name)
 
-
     # ---------- UTILITY FUNCTIONS ----------
     def _copy_normalisation_weights(self,
-                                    source_model : keras.Sequential,
-                                    target_model : keras.Sequential):
+                                    source_model: keras.Sequential,
+                                    target_model: keras.Sequential):
         """
         Copies the weights of normalisation layers from the source model to the target model. This is useful when
         cloning a model to ensure that the normalisation layers in the new model have the same weights as those in the
@@ -187,7 +188,7 @@ class DNNManager:
         return model
 
     @staticmethod
-    def compile_from_config(model : keras.Sequential, compile_config : CompileConfig) -> None:
+    def compile_from_config(model: keras.Sequential, compile_config: CompileConfig) -> None:
         """
         Compiles the current model using the instance's CompileConfig. This allows for dynamic compilation of the model
         with different loss functions, optimisers, and metrics.
@@ -196,6 +197,8 @@ class DNNManager:
         ----------
         model : keras.Sequential
             The Keras model to be compiled.
+        compile_config : CompileConfig
+            The configuration for compiling the model.
         """
         optimiser_name = compile_config.optimiser
 
@@ -213,7 +216,6 @@ class DNNManager:
             steps_per_execution=compile_config.steps_per_execution, # type: ignore
             jit_compile=compile_config.jit_compile  # type: ignore
         )
-
 
     # ---------- MODEL INFORMATION ----------
     def get_model_info(self) -> dict[str, Any]:
@@ -246,12 +248,11 @@ class DNNManager:
         num_outputs = self.model.output_shape[-1] if self.model.output_shape else 0
         return f"R({num_layers}x{num_neurons}_{num_inputs}i_{num_outputs}o)"
 
-
     # ---------- MODEL SAVING AND LOADING ----------
     def _get_model_paths(self,
-                        model_dir : Path | str,
-                        model_name : str,
-                        version : int) -> dict[str, Path]:
+                         model_dir: Path | str,
+                         model_name: str,
+                         version: int) -> dict[str, Path]:
         """
         Get the paths for the model, history, and plots for a specific version.
 
@@ -278,12 +279,184 @@ class DNNManager:
             "model": base.with_name(base.name + "_model.keras"),
             "history": base.with_name(base.name + "_history.pkl"),
             "plots": base.with_name(base.name + "_plots.png"),
+            "manifest": base.with_name(base.name + "_manifest.json"),
         }
 
+    def save_manifest(self,
+                      model_dir: Path | str,
+                      model_name: str,
+                      version: int,
+                      feature_names: Sequence[str],
+                      label_name: str | None = None) -> Path:
+        """
+        Write a JSON manifest describing the features a saved model expects.
+
+        The saved ``.keras`` file records the model architecture and weights but not the names or ordering of the input
+        features, nor the label it predicts. Without this information, prediction on a pandas DataFrame is fragile:
+        there is no way to know which columns to select or in which order to arrange them. The manifest closes that gap
+        so that a model can be paired with new data reliably (see ``seawrd.predictor.Predictor``).
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the model.
+        version : int
+            The version number of the model.
+        feature_names : Sequence[str]
+            The names of the input features, in the exact order the model was trained on.
+        label_name : str | None, optional
+            The name of the label column the model predicts, by default None.
+
+        Returns
+        -------
+        Path
+            The path to the written manifest file.
+        """
+        if isinstance(model_dir, str):
+            model_dir = Path(model_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        path = self._get_model_paths(model_dir, model_name, version)["manifest"]
+
+        manifest = {
+            "model_name": model_name,
+            "version": version,
+            "feature_names": list(feature_names),
+            "label_name": label_name,
+            "num_outputs": int(self.model.output_shape[-1]) if self.model.output_shape else None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+
+        print(f"Manifest: {path}")
+        return path
+
+    @staticmethod
+    def load_manifest(model_dir: Path | str,
+                      model_name: str,
+                      version: int) -> dict[str, Any] | None:
+        """
+        Load the JSON manifest for a saved model version, if one exists.
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the model.
+        version : int
+            The version number of the model.
+
+        Returns
+        -------
+        dict[str, Any] | None
+            The parsed manifest dictionary, or None if no manifest file is present.
+        """
+        if isinstance(model_dir, str):
+            model_dir = Path(model_dir)
+
+        path = model_dir / f"{model_name}_v{version}_manifest.json"
+        if not path.exists():
+            return None
+
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_ensemble_manifest(self,
+                               model_dir: Path | str,
+                               model_name: str,
+                               version: int,
+                               member_names: Sequence[str],
+                               feature_names: Sequence[str] | None = None,
+                               label_name: str | None = None) -> Path:
+        """
+        Write a JSON manifest listing the saved ensemble members for a model version.
+
+        Each member is an ordinary model saved via :meth:`save_model_version` under its own name (with its own
+        per-member manifest); this ensemble manifest just records which member names belong together, so
+        ``seawrd.predictor.EnsemblePredictor`` can find and load them all.
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the ensemble's parent model (i.e. the same name the single best model is saved under).
+        version : int
+            The version number shared by the ensemble and the best model it was drawn from.
+        member_names : Sequence[str]
+            The model names of the saved ensemble members, in the order they should be reported.
+        feature_names : Sequence[str] | None, optional
+            The names of the input features the ensemble was trained on, by default None.
+        label_name : str | None, optional
+            The name of the label column the ensemble predicts, by default None.
+
+        Returns
+        -------
+        Path
+            The path to the written ensemble manifest file.
+        """
+        if isinstance(model_dir, str):
+            model_dir = Path(model_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        path = model_dir / f"{model_name}_v{version}_ensemble.json"
+
+        manifest = {
+            "model_name": model_name,
+            "version": version,
+            "member_names": list(member_names),
+            "num_members": len(member_names),
+            "feature_names": list(feature_names) if feature_names else None,
+            "label_name": label_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+
+        print(f"Ensemble manifest: {path}")
+        return path
+
+    @staticmethod
+    def load_ensemble_manifest(model_dir: Path | str,
+                               model_name: str,
+                               version: int) -> dict[str, Any] | None:
+        """
+        Load the JSON ensemble manifest for a model version, if one exists.
+
+        Parameters
+        ----------
+        model_dir : Path | str
+            The directory containing the model files.
+        model_name : str
+            The name of the ensemble's parent model.
+        version : int
+            The version number of the ensemble.
+
+        Returns
+        -------
+        dict[str, Any] | None
+            The parsed ensemble manifest dictionary, or None if no ensemble manifest file is present.
+        """
+        if isinstance(model_dir, str):
+            model_dir = Path(model_dir)
+
+        path = model_dir / f"{model_name}_v{version}_ensemble.json"
+        if not path.exists():
+            return None
+
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
     def get_latest_version(self,
-                       model_dir : Path | str,
-                       model_name : str,
-                       pattern : re.Pattern | str | None = None) -> int:
+                           model_dir: Path | str,
+                           model_name: str,
+                           pattern: re.Pattern | str | None = None) -> int:
         """
         Finds the latest version of a model from the specified directory.
 
@@ -320,11 +493,13 @@ class DNNManager:
         return max(versions) if versions else 0
 
     def save_model_version(self,
-                           model : keras.Model,
-                           history : keras.callbacks.History,
-                           model_dir : Path | str,
-                           model_name : str,
-                           version : int) -> dict[str, Path]:
+                           model: keras.Model,
+                           history: keras.callbacks.History,
+                           model_dir: Path | str,
+                           model_name: str,
+                           version: int,
+                           feature_names: Sequence[str] | None = None,
+                           label_name: str | None = None) -> dict[str, Path]:
         """
         Save a specific version of the model and its training history.
 
@@ -340,6 +515,11 @@ class DNNManager:
             The name of the model.
         version : int
             The version number of the model.
+        feature_names : Sequence[str] | None, optional
+            The names of the input features, in training order. When provided, a JSON manifest is written alongside the
+            model so that it can later be paired with new data for prediction. By default None (no manifest is written).
+        label_name : str | None, optional
+            The name of the label column the model predicts, recorded in the manifest. By default None.
 
         Returns
         -------
@@ -364,12 +544,16 @@ class DNNManager:
         print(f"Model:   {paths['model']}")
         print(f"History: {paths['history']}")
 
+        # Save a feature manifest when feature names are supplied, enabling robust DataFrame prediction later
+        if feature_names is not None:
+            self.save_manifest(model_dir, model_name, version, feature_names, label_name)
+
         return paths
 
     def get_model_version(self,
-                           model_dir : Path | str,
-                           model_name : str,
-                           version : int | None = None) -> tuple[keras.Model, keras.callbacks.History | None, int]:
+                          model_dir: Path | str,
+                          model_name: str,
+                          version: int | None = None) -> tuple[keras.Model, keras.callbacks.History | None, int]:
         """
         Retrieves a specific version of the model and its training history.
 
@@ -420,9 +604,9 @@ class DNNManager:
         return model, history, version  # type:ignore
 
     def load_model_version(self,
-                           model_dir : Path | str,
-                           model_name : str,
-                           version : int | None = None):
+                           model_dir: Path | str,
+                           model_name: str,
+                           version: int | None = None):
         """
         Loads a specific version of the model and its training history into the DNNManager.
 

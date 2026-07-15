@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "seawrd"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
     "keras",
     "tensorflow",
@@ -19,7 +19,7 @@ dependencies = [
     "ipykernel"
 ]
 authors = [
-  {name = "Ashley Parr", email = "amparr83@gmail.com"},
+  {name = "Ashley Parr", email = "ashley.parr@protonmail.com"},
   {name = "Bishwash Devkota", email = "bishwashdevkota567@gmail.com"},
   {name = "Fredi Quispe Huaynasi", email = "fredifqh@gmail.com"},
   {name = "Ian Rain-Water", email = "irainw@stanford.edu"},
@@ -34,6 +34,10 @@ license-files = ["LICEN[CS]E.*"]
 
 [project.urls]
 Repository = "https://github.com/Siphlygon/SEAWRD"
+
+[project.scripts]
+seawrd-train = "seawrd.cli.train:main"
+seawrd-predict = "seawrd.cli.predict:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -36,6 +36,30 @@ def test_prepare_derives_radius_and_filters_quality_rows(planet_df : pd.DataFram
                                err_msg="Derived radius R_p does not match the sum of R_a and R_b.")
 
 
+def test_save_to_npz_persists_feature_and_label_names(planet_df : pd.DataFrame, tmp_path):
+    """
+    Test that save_to_npz records the feature names and label name alongside the data arrays, so a downstream training
+    run can write a prediction manifest.
+
+    Parameters
+    ----------
+    planet_df : pandas.DataFrame
+        The input DataFrame containing planetary data.
+    tmp_path : pathlib.Path
+        A temporary directory provided by pytest.
+    """
+    features = ["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"]
+    # normalise=False keeps this test free of any keras dependency
+    p = DataPreprocessor(planet_df, features=features, label="R_p", normalise=False)
+
+    path = tmp_path / "bundle.npz"
+    p.save_to_npz(path)
+
+    with np.load(path, allow_pickle=False) as bundle:
+        assert [str(name) for name in bundle["feature_names"]] == features, "Feature names were not persisted in order"
+        assert str(bundle["label_name"]) == "R_p", "Label name was not persisted"
+
+
 def test_prepare_does_not_mutate_input_dataframe(planet_df : pd.DataFrame):
     """
     Test that the data preprocessor does not mutate the input DataFrame.
@@ -246,6 +270,107 @@ def test_get_training_data_with_different_random_states(planet_df : pd.DataFrame
     # Check that the training and test sets are different for different random states
     assert not np.array_equal(x_train1, x_train2)
     assert not np.array_equal(x_test1, x_test2)
+
+
+def test_k_fold_splits_yields_correct_number_of_folds(planet_df : pd.DataFrame):
+    """
+    Test that k_fold_splits yields exactly n_splits folds.
+
+    Parameters
+    ----------
+    planet_df : pandas.DataFrame
+        The input DataFrame containing planetary data.
+    """
+    p = DataPreprocessor(
+        planet_df,
+        features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"],
+        label="R_p",
+        normalise=False,
+    )
+
+    folds = list(p.k_fold_splits(n_splits=5, random_state=0))
+    assert len(folds) == 5  # 5 rows remain after quality filtering
+
+
+def test_k_fold_splits_folds_are_disjoint_and_cover_all_rows(planet_df : pd.DataFrame):
+    """
+    Test that each fold's validation set is disjoint from its training set, and that the validation sets across all
+    folds together cover every row of the prepared data exactly once.
+
+    Parameters
+    ----------
+    planet_df : pandas.DataFrame
+        The input DataFrame containing planetary data.
+    """
+    p = DataPreprocessor(
+        planet_df,
+        features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"],
+        label="R_p",
+        normalise=False,
+    )
+
+    all_val_indices = []
+    for train_features, val_features, train_labels, val_labels in p.k_fold_splits(n_splits=5, random_state=0):
+        assert set(train_features.index).isdisjoint(set(val_features.index)), (
+            "Training and validation rows should never overlap within a fold")
+        assert list(train_features.index) == list(train_labels.index)
+        assert list(val_features.index) == list(val_labels.index)
+        all_val_indices.extend(val_features.index)
+
+    assert sorted(all_val_indices) == sorted(p.df.index), (
+        "Every row should appear as a validation row in exactly one fold")
+
+
+def test_k_fold_splits_raises_for_n_splits_less_than_two(planet_df : pd.DataFrame):
+    """
+    Test that k_fold_splits raises a ValueError when n_splits is less than 2.
+
+    Parameters
+    ----------
+    planet_df : pandas.DataFrame
+        The input DataFrame containing planetary data.
+    """
+    p = DataPreprocessor(planet_df, label="R_p", normalise=False)
+
+    with pytest.raises(ValueError, match="n_splits"):
+        next(p.k_fold_splits(n_splits=1))
+
+
+def test_k_fold_splits_raises_when_n_splits_exceeds_row_count(planet_df : pd.DataFrame):
+    """
+    Test that k_fold_splits raises a ValueError when n_splits exceeds the number of available rows.
+
+    Parameters
+    ----------
+    planet_df : pandas.DataFrame
+        The input DataFrame containing planetary data.
+    """
+    p = DataPreprocessor(planet_df, label="R_p", normalise=False)  # 5 rows after filtering
+
+    with pytest.raises(ValueError, match="n_splits"):
+        next(p.k_fold_splits(n_splits=10))
+
+
+def test_k_fold_splits_reproducible_with_same_random_state(planet_df : pd.DataFrame):
+    """
+    Test that k_fold_splits produces identical folds when called twice with the same random_state.
+
+    Parameters
+    ----------
+    planet_df : pandas.DataFrame
+        The input DataFrame containing planetary data.
+    """
+    p = DataPreprocessor(
+        planet_df,
+        features=["x_core'", "x_H2O", "T_irr", "T_b", "M_b", "M_a"],
+        label="R_p",
+        normalise=False,
+    )
+
+    folds_a = [val.index.tolist() for _, val, _, _ in p.k_fold_splits(n_splits=3, random_state=42)]
+    folds_b = [val.index.tolist() for _, val, _, _ in p.k_fold_splits(n_splits=3, random_state=42)]
+
+    assert folds_a == folds_b
 
 
 # @pytest.mark.tf

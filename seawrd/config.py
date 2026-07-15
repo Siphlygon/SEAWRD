@@ -281,6 +281,7 @@ class OutputConfig(ConfigSection):
     version: int = 1
     save_model: bool = True
     save_plots: bool = True
+    save_ensemble: bool = False
 
     def __post_init__(self):
         if self.version < 0:
